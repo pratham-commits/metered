@@ -1,0 +1,4 @@
+# Person 1. Argo CD Sync hook, wave -1, delete the hook before the next sync.
+# Namespace rideshare. Uses the rider image. Command: python -m rideshare.migrate
+# envFrom rideshare-secret and rideshare-config. runAsUser 65532. backoffLimit 3.
+# Image: ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/rideshare/rider:REPLACE_SHA

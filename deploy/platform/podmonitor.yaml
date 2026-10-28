@@ -1,0 +1,4 @@
+# Person 2. PodMonitor rideshare in namespace monitoring.
+# Select every pod in namespace rideshare that has an app label.
+# Scrape path /metrics on the port named http.
+# Every Service HTTP port must be named http or this monitor finds nothing.

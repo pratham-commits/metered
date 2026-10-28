@@ -1,0 +1,4 @@
+# Person 2. Deployment, Service, and ServiceAccount named matching.
+# Port http 8004. 2 replicas. No Ingress.
+# Role arn:aws:iam::ACCOUNT_ID:role/rideshare-matching
+# Same resources, probes, envFrom, and non-root user as the other apps.

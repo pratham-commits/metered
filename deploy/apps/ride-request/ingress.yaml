@@ -1,0 +1,4 @@
+# Person 2. Internet-facing ALB for the public URL.
+# Ingress class alb, target-type ip, listen HTTP 80.
+# Path / prefix to Service ride-request port 8003.
+# Namespace rideshare.

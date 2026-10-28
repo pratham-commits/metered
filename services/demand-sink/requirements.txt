@@ -1,0 +1,2 @@
+# Person 3. Same pins as services/common/requirements.txt.
+# This process is part of Demand Analytics. It is not a ninth service.

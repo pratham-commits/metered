@@ -1,0 +1,17 @@
+# Local stack for debugging a ride before MSK and EKS exist. Person 1 starts it.
+# Person 2 and Person 3 add their services to this file. Do not treat compose as the graded cluster.
+#
+# postgres:16, user/password/db rideshare, healthcheck pg_isready.
+# localstack/localstack:4.4 with SERVICES sqs,dynamodb,s3 and scripts/localstack-init.sh.
+# apache/kafka:3.9.0 single KRaft node. Advertised listener PLAINTEXT://kafka:9092.
+#   Local topics need replication factor 1. The cluster Job uses factor 3 and must not run here.
+# migrate: build the rider Dockerfile, command python -m rideshare.migrate,
+#   DATABASE_URL postgresql://rideshare:rideshare@postgres:5432/rideshare.
+# rider and driver: AWS_ENDPOINT_URL http://localstack:4566, KAFKA_SECURITY_PROTOCOL PLAINTEXT,
+#   KAFKA_BOOTSTRAP kafka:9092, HASH_NODES p0,p1,p2,p3, DEMO_TOKEN local-demo-token,
+#   MATCH_QUEUE_URL from LocalStack's get-queue-url if the default host is rejected.
+# Publish host ports 8001 and 8002 only for laptop checks.
+# Person 2 adds ride-request (host port 8003), matching, and dispatch.
+#   RIDER_URL=http://rider:8001, DRIVER_HTTP=http://driver:8002,
+#   DRIVER_GRPC=driver:9002, DISPATCH_GRPC=dispatch:9005, TRIP_URL=http://trip-tracking:8006.
+# Person 3 adds trip-tracking and demand-sink.

@@ -1,0 +1,9 @@
+<!--
+  Person 3. Letter e. Maven project for the Flink job.
+  groupId edu.bits.rideshare, artifactId demand-analytics, Java 17.
+  flink-streaming-java and flink-clients 1.20.0, scope provided.
+  flink-connector-kafka 3.4.0-1.20 and jackson-databind, bundled.
+  maven-shade-plugin 3.6.0. Main class edu.bits.rideshare.DemandJob.
+  Shade ServicesResourceTransformer and drop signature files under META-INF.
+  If 3.4.0-1.20 is missing from Maven Central, change only that version string.
+-->

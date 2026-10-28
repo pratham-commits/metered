@@ -1,0 +1,8 @@
+# Person 2. ConfigMap rideshare-dashboard in namespace monitoring.
+# Label grafana_dashboard=1 so the sidecar loads it.
+# Dashboard title "Ride Sharing", uid rideshare.
+# Four panels, which are the four metrics the professor named:
+#   RPS: sum(rate(http_requests_total[1m]))
+#   Error rate: 5xx rate divided by total rate
+#   Latency p95 from http_request_duration_seconds_bucket
+#   Nodes ready: kube_node_status_condition Ready=true

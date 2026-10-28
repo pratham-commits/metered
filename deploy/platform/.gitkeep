@@ -1,0 +1,2 @@
+# Person 2 fills this directory with prometheus.yaml, dashboard.yaml, podmonitor.yaml, and fluent-bit.yaml.
+# The file exists so Git tracks deploy/platform before those manifests are written.

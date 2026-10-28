@@ -1,0 +1,3 @@
+# Person 2. Letter c. HorizontalPodAutoscaler matching.
+# Same spec as ride-request: min 2, max 6, CPU 60 percent.
+# The load-test proof is both this replica count and ride-request above 2.

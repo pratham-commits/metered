@@ -1,0 +1,3 @@
+# Person 2. Deployment, Service, and ServiceAccount named dispatch.
+# Ports http 8005 and grpc 9005. 2 replicas. No Ingress.
+# Role arn:aws:iam::ACCOUNT_ID:role/rideshare-dispatch

@@ -1,0 +1,38 @@
+# Local build guides. They stay on disk and are not part of the submission repo.
+docs/00-overview.md
+docs/01-person-1.md
+docs/02-person-2.md
+docs/03-person-3.md
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform.lock.hcl
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+
+# Lambda zip and Flink jar
+services/fare/dist/
+services/fare/*.zip
+*.jar
+target/
+
+# OS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp

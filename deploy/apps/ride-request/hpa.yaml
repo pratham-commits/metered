@@ -1,0 +1,4 @@
+# Person 2. Letter c. HorizontalPodAutoscaler ride-request.
+# min 2, max 6, CPU utilization 60 percent of the 100m request.
+# If k6 cannot push replicas above 2, change 60 to 30 in git and let Argo CD sync.
+# Do not kubectl patch this object.

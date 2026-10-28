@@ -1,0 +1,13 @@
+# Build context is the repo root. Keep images small and free of local secrets.
+.git
+.terraform
+**/.venv
+**/__pycache__
+**/.pytest_cache
+docs
+infra
+**/*.tfstate
+services/fare/dist
+**/target
+*.jar
+.DS_Store

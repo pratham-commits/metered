@@ -1,0 +1,4 @@
+# Person 2. Deployment, Service, and ServiceAccount named ride-request.
+# Port http 8003. 2 replicas. This is the only Service with an Ingress.
+# Role arn:aws:iam::ACCOUNT_ID:role/rideshare-ride-request
+# Same resources, probes, envFrom, and config-version annotation as the other apps.

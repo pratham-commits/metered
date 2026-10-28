@@ -1,0 +1,6 @@
+# Person 1. Terraform creates this Application once. Do not kubectl apply it.
+# repoURL is the same GitHub repository as rideshare-app.yaml.
+#
+# Application rideshare-platform. Source path deploy/platform, recurse, revision main.
+# Destination namespace monitoring. Automated sync, prune, selfHeal, CreateNamespace=true.
+# The directory is empty until Person 2 commits the Grafana and Fluent Bit manifests.

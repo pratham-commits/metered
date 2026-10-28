@@ -1,0 +1,8 @@
+# Person 1. Deployment, Service, and ServiceAccount named rider.
+# Namespace rideshare. 2 replicas. Port 8001 named http.
+# No IRSA annotation. Rider does not call AWS APIs.
+# envFrom the secret and the config map. SERVICE_NAME=rider.
+# Requests cpu 100m memory 128Mi. Limits cpu 500m memory 256Mi.
+# readiness /readyz, liveness /healthz. runAsUser 65532.
+# Pod annotation rideshare.io/config-version so a git bump restarts the pods.
+# Replace ACCOUNT_ID and REPLACE_SHA. Do not use the tag latest.

@@ -1,0 +1,14 @@
+<!--
+  Person 2. The one public page. Six sections: Rider, Driver, Trace, Ring, Demand, Checklist.
+  Talk only to this origin under /api/*. Do not call the other services from the browser.
+
+  Rider: create a profile, pick pickup and drop zones, request a ride.
+  Driver: create a profile, go online at a zone center, move the trip ARRIVING -> IN_PROGRESS -> COMPLETED.
+  Trace: refresh the ride and show every hop. Conflict button sends X-Demo-Token from the ?demo= query.
+  Ring: show the live ring, then preview adding p4 and print moved versus stayed.
+  Demand: print the latest windows.
+  Checklist: table of title, status, evidence.
+
+  Zone dropdowns are filled from GET /api/zones. Default pickup z11 and drop z22.
+  Money is stored in paise. Display rupees as cents / 100 when you render a fare.
+-->

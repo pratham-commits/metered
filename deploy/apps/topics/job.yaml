@@ -1,0 +1,5 @@
+# Person 3. Argo CD Sync hook, wave -1.
+# Uses the trip-tracking image. Creates Kafka topics ride-events and demand-results,
+# 3 partitions and replication factor 3, and ignores TopicAlreadyExistsError.
+# Security protocol comes from the config map. Do not run this against local compose,
+# which has one broker. Local topics use replication factor 1.

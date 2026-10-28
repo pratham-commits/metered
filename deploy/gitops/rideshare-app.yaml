@@ -1,0 +1,7 @@
+# Person 1. Letter d. Terraform creates this Application once. Do not kubectl apply it.
+# Before the k8s stack is applied, set repoURL to the real https://github.com/<org>/<repo>.git.
+#
+# Application rideshare in namespace argocd.
+# Source path deploy/apps, directory recurse, targetRevision main.
+# Destination namespace rideshare, in-cluster API.
+# Automated sync, prune, selfHeal, CreateNamespace=true.

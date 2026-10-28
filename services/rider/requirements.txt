@@ -1,0 +1,2 @@
+# Person 1. Same pins as services/common/requirements.txt.
+# The image installs the common file. Keep this list identical so local pip matches the image.

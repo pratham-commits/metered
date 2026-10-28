@@ -1,0 +1,2 @@
+# Person 2. Same pins as services/common/requirements.txt.
+# Use urllib from the standard library for the proxy calls. Do not add httpx unless you have to.

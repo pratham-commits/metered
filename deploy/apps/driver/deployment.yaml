@@ -1,0 +1,5 @@
+# Person 1. Deployment, Service, and ServiceAccount named driver.
+# Ports: http 8002 and grpc 9002. 2 replicas.
+# ServiceAccount annotation:
+# eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/rideshare-driver
+# Same resources, probes, envFrom, and non-root user as rider.
