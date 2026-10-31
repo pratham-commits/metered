@@ -1,6 +1,3 @@
-# Fill one line per member before submission. Do not change the service or task names.
-# Format: <idno>  <name>  Services: ... Tasks: ...
-#
-# <idno>  <name>  Services: Rider, Driver. Tasks: (a) all Terraform, (d) Argo CD, (g) S3, RDS PostgreSQL, DynamoDB.
-# <idno>  <name>  Services: Ride Request, Matching, Dispatch. Tasks: (c) EKS, HPA, k6, (f) consistent hashing, (h) Prometheus, Grafana, CloudWatch logs. Also the public web UI.
-# <idno>  <name>  Services: Trip Tracking, Fare, Demand Analytics. Tasks: (b) Fare Lambda and REST/gRPC/SQS, (e) Flink on EMR.
+<idno>  <name>  Services: Rider, Driver. Tasks: (a) all Terraform, (d) Argo CD, (g) S3, RDS PostgreSQL, DynamoDB.
+<idno>  <name>  Services: Ride Request, Matching, Dispatch. Tasks: (c) EKS stateless services, HPA on Ride Request and Matching, k6, (f) consistent hashing, (h) Prometheus, Grafana, CloudWatch logs. Also the public web UI.
+<idno>  <name>  Services: Trip Tracking, Fare, Demand Analytics. Tasks: (b) Fare Lambda and the REST/gRPC/SQS path, (e) Flink on EMR.

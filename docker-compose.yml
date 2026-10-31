@@ -1,17 +1,134 @@
-# Local stack for debugging a ride before MSK and EKS exist. Person 1 starts it.
-# Person 2 and Person 3 add their services to this file. Do not treat compose as the graded cluster.
-#
-# postgres:16, user/password/db rideshare, healthcheck pg_isready.
-# localstack/localstack:4.4 with SERVICES sqs,dynamodb,s3 and scripts/localstack-init.sh.
-# apache/kafka:3.9.0 single KRaft node. Advertised listener PLAINTEXT://kafka:9092.
-#   Local topics need replication factor 1. The cluster Job uses factor 3 and must not run here.
-# migrate: build the rider Dockerfile, command python -m rideshare.migrate,
-#   DATABASE_URL postgresql://rideshare:rideshare@postgres:5432/rideshare.
-# rider and driver: AWS_ENDPOINT_URL http://localstack:4566, KAFKA_SECURITY_PROTOCOL PLAINTEXT,
-#   KAFKA_BOOTSTRAP kafka:9092, HASH_NODES p0,p1,p2,p3, DEMO_TOKEN local-demo-token,
-#   MATCH_QUEUE_URL from LocalStack's get-queue-url if the default host is rejected.
-# Publish host ports 8001 and 8002 only for laptop checks.
-# Person 2 adds ride-request (host port 8003), matching, and dispatch.
-#   RIDER_URL=http://rider:8001, DRIVER_HTTP=http://driver:8002,
-#   DRIVER_GRPC=driver:9002, DISPATCH_GRPC=dispatch:9005, TRIP_URL=http://trip-tracking:8006.
-# Person 3 adds trip-tracking and demand-sink.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: rideshare
+      POSTGRES_PASSWORD: rideshare
+      POSTGRES_DB: rideshare
+    ports:
+      - 5432:5432
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U rideshare
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  localstack:
+    image: localstack/localstack:4.4
+    environment:
+      SERVICES: sqs,dynamodb,s3
+      AWS_DEFAULT_REGION: ap-south-1
+      SQS_ENDPOINT_STRATEGY: path
+    ports:
+      - 4566:4566
+    volumes:
+      - ./scripts/localstack-init.sh:/etc/localstack/init/ready.d/init.sh
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - test -f /tmp/rideshare-ready
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  kafka:
+    image: apache/kafka:3.9.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://kafka:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    ports:
+      - 9092:9092
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+      interval: 10s
+      timeout: 10s
+      retries: 30
+  migrate:
+    build:
+      context: .
+      dockerfile: services/rider/Dockerfile
+    command:
+      - python
+      - -m
+      - rideshare.migrate
+    environment:
+      DATABASE_URL: postgresql://rideshare:rideshare@postgres:5432/rideshare
+    depends_on:
+      postgres:
+        condition: service_healthy
+  rider:
+    build:
+      context: .
+      dockerfile: services/rider/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://rideshare:rideshare@postgres:5432/rideshare
+      AWS_REGION: ap-south-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      DRIVER_TABLE: rideshare_driver_live
+      DEMAND_TABLE: rideshare_demand_windows
+      TRIP_BUCKET: rideshare-trip-files-local
+      MATCH_QUEUE_URL: http://localstack:4566/queue/ap-south-1/000000000000/rideshare-match-jobs
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_SECURITY_PROTOCOL: PLAINTEXT
+      KAFKA_TOPIC_EVENTS: ride-events
+      KAFKA_TOPIC_RESULTS: demand-results
+      HASH_NODES: p0,p1,p2,p3
+      FARE_ESTIMATE_URL: ""
+      DEMO_TOKEN: local-demo-token
+      SERVICE_NAME: rider
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_EC2_METADATA_DISABLED: "true"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      localstack:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - 127.0.0.1:8001:8001
+  driver:
+    build:
+      context: .
+      dockerfile: services/driver/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://rideshare:rideshare@postgres:5432/rideshare
+      AWS_REGION: ap-south-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      DRIVER_TABLE: rideshare_driver_live
+      DEMAND_TABLE: rideshare_demand_windows
+      TRIP_BUCKET: rideshare-trip-files-local
+      MATCH_QUEUE_URL: http://localstack:4566/queue/ap-south-1/000000000000/rideshare-match-jobs
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_SECURITY_PROTOCOL: PLAINTEXT
+      KAFKA_TOPIC_EVENTS: ride-events
+      KAFKA_TOPIC_RESULTS: demand-results
+      HASH_NODES: p0,p1,p2,p3
+      FARE_ESTIMATE_URL: ""
+      DEMO_TOKEN: local-demo-token
+      SERVICE_NAME: driver
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_EC2_METADATA_DISABLED: "true"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      localstack:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - 127.0.0.1:8002:8002
+      - 127.0.0.1:9002:9002

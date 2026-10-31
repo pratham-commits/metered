@@ -1,8 +1,70 @@
-# Person 1. Deployment, Service, and ServiceAccount named rider.
-# Namespace rideshare. 2 replicas. Port 8001 named http.
-# No IRSA annotation. Rider does not call AWS APIs.
-# envFrom the secret and the config map. SERVICE_NAME=rider.
-# Requests cpu 100m memory 128Mi. Limits cpu 500m memory 256Mi.
-# readiness /readyz, liveness /healthz. runAsUser 65532.
-# Pod annotation rideshare.io/config-version so a git bump restarts the pods.
-# Replace ACCOUNT_ID and REPLACE_SHA. Do not use the tag latest.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rider
+  namespace: rideshare
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: rider
+  template:
+    metadata:
+      labels:
+        app: rider
+      annotations:
+        rideshare.io/config-version: "1"
+    spec:
+      serviceAccountName: rider
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      containers:
+        - name: rider
+          image: ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/rideshare/rider:REPLACE_SHA
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - secretRef:
+                name: rideshare-secret
+            - configMapRef:
+                name: rideshare-config
+          env:
+            - name: SERVICE_NAME
+              value: rider
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8001
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8001
+            initialDelaySeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rider
+  namespace: rideshare
+spec:
+  selector:
+    app: rider
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rider
+  namespace: rideshare

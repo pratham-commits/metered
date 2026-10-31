@@ -1,3 +1,11 @@
-# Person 1. Pins every Python service installs.
-# Add, with versions: fastapi, uvicorn[standard], psycopg[binary,pool], boto3,
-# pydantic, prometheus-client, grpcio, grpcio-tools, protobuf, kafka-python, pytest.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+psycopg[binary,pool]==3.2.4
+boto3==1.35.99
+pydantic==2.10.6
+prometheus-client==0.21.1
+grpcio==1.68.1
+grpcio-tools==1.68.1
+protobuf==5.29.3
+kafka-python==2.1.2
+pytest==8.3.4

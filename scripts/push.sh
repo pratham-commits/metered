@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
-# Person 1. The only supported way to publish an image.
-#
-# Usage: scripts/push.sh <service>
-# service is one of: rider, driver, ride-request, matching, dispatch, trip-tracking, demand-sink
-# Tag is the current git short SHA. Repository is
-# <account>.dkr.ecr.ap-south-1.amazonaws.com/rideshare/<service>:<sha>
-# Log in with aws ecr get-login-password. Build with the repo root as context and
-# -f services/<service>/Dockerfile. Push that tag.
-# Print the image line. The author pastes it into deploy/apps/<service>/deployment.yaml and commits.
-# Do not kubectl set image. Argo CD rolls the pod from the git commit.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+SERVICE="${1:?Usage: scripts/push.sh SERVICE}"
+case "$SERVICE" in rider|driver|ride-request|matching|dispatch|trip-tracking|demand-sink) ;; *) echo "Unknown service" >&2; exit 2;; esac
+if test -n "$(git status --porcelain --untracked-files=normal)"; then
+  echo "Commit source changes first so the image tag identifies the source." >&2; exit 1
+fi
+SHA="$(git rev-parse --short HEAD)"
+ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+REGION="${AWS_REGION:-ap-south-1}"
+REGISTRY="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
+REPO="${REGISTRY}/rideshare/${SERVICE}"
+aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+docker build --platform linux/amd64 -f "services/${SERVICE}/Dockerfile" -t "${REPO}:${SHA}" .
+docker push "${REPO}:${SHA}"
+echo "IMAGE ${REPO}:${SHA}"
+echo "Put that tag in deploy/apps/${SERVICE}/deployment.yaml and commit. Do not kubectl set image."

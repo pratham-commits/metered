@@ -1,5 +1,76 @@
-# Person 1. Deployment, Service, and ServiceAccount named driver.
-# Ports: http 8002 and grpc 9002. 2 replicas.
-# ServiceAccount annotation:
-# eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/rideshare-driver
-# Same resources, probes, envFrom, and non-root user as rider.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: driver
+  namespace: rideshare
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: driver
+  template:
+    metadata:
+      labels:
+        app: driver
+      annotations:
+        rideshare.io/config-version: "1"
+    spec:
+      serviceAccountName: driver
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      containers:
+        - name: driver
+          image: ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/rideshare/driver:REPLACE_SHA
+          ports:
+            - containerPort: 8002
+            - containerPort: 9002
+          envFrom:
+            - secretRef:
+                name: rideshare-secret
+            - configMapRef:
+                name: rideshare-config
+          env:
+            - name: SERVICE_NAME
+              value: driver
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8002
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8002
+            initialDelaySeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: driver
+  namespace: rideshare
+spec:
+  selector:
+    app: driver
+  ports:
+    - name: http
+      port: 8002
+      targetPort: 8002
+    - name: grpc
+      port: 9002
+      targetPort: 9002
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: driver
+  namespace: rideshare
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/rideshare-driver
