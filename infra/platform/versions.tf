@@ -1,6 +1,27 @@
-# Person 1. Remote state.
-# Backend bucket rideshare-tfstate-ACCOUNT_ID, key platform/terraform.tfstate,
-# region ap-south-1, lock table rideshare-tf-lock, encrypt true.
-# Replace ACCOUNT_ID in the backend block before init. Backends cannot use variables.
-# Providers: aws ~> 5.70, random ~> 3.6. Region ap-south-1.
-# Data: availability zones, slice the first 3.
+terraform {
+  required_version = ">= 1.9.0"
+  required_providers {
+    aws    = { source = "hashicorp/aws", version = "~> 5.70" }
+    random = { source = "hashicorp/random", version = "~> 3.6" }
+  }
+  backend "s3" {
+    bucket         = "rideshare-tfstate-ACCOUNT_ID"
+    key            = "platform/terraform.tfstate"
+    region         = "ap-south-1"
+    dynamodb_table = "rideshare-tf-lock"
+    encrypt        = true
+  }
+}
+
+provider "aws" {
+  region = "ap-south-1"
+}
+
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+locals {
+  azs    = slice(data.aws_availability_zones.available.names, 0, 3)
+  region = "ap-south-1"
+}

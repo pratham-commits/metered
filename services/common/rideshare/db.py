@@ -1,5 +1,25 @@
-# Person 1. Postgres access for every service that has DATABASE_URL.
-#
-# ConnectionPool min 1 max 4 from DATABASE_URL.
-# connection() context manager yields a connection and commits.
-# ping() runs SELECT 1. Readiness probes call this.
+import os
+from contextlib import contextmanager
+
+from psycopg_pool import ConnectionPool
+
+_pool: ConnectionPool | None = None
+
+
+def pool() -> ConnectionPool:
+    global _pool
+    if _pool is None:
+        _pool = ConnectionPool(conninfo=os.environ["DATABASE_URL"], min_size=1, max_size=4)
+    return _pool
+
+
+@contextmanager
+def connection():
+    with pool().connection() as conn:
+        yield conn
+        conn.commit()
+
+
+def ping() -> None:
+    with connection() as conn:
+        conn.execute("SELECT 1")

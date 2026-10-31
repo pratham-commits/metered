@@ -1,6 +1,6 @@
 # Ride Sharing
 
-Cloud Computing assignment. Eight services on AWS in `ap-south-1`. This repository is the skeleton. Each file contains a comment that says what to implement there. The implementation has not been written yet.
+Cloud Computing assignment. Eight services on AWS in `ap-south-1`. The platform infrastructure and Rider/Driver services are implemented in this contribution. Person 2 and Person 3 service files remain skeletons. Start with [the platform runbook](docs/platform-runbook.md) for local checks, AWS deployment, handoff and viva evidence.
 
 The long build guides are local only and are listed in `.gitignore`:
 
@@ -11,13 +11,13 @@ The long build guides are local only and are listed in `.gitignore`:
 
 ## Who owns what
 
-| Person | Write these paths | Defends |
-|---|---|---|
-| Person 1 | `infra/`, `services/common/` except the ring test, `services/rider/`, `services/driver/`, `deploy/apps/migrate/`, `deploy/apps/rider/`, `deploy/apps/driver/`, `deploy/gitops/`, `scripts/`, `docker-compose.yml` | Terraform, GitOps, the three data stores |
+| Person   | Write these paths                                                                                                                                                                                                                                                 | Defends                                                                        |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Platform maintainer | `infra/`, `services/common/` except the ring test, `services/rider/`, `services/driver/`, `deploy/apps/migrate/`, `deploy/apps/rider/`, `deploy/apps/driver/`, `deploy/gitops/`, `scripts/`, `docker-compose.yml`                                                 | Terraform, GitOps, the three data stores                                       |
 | Person 2 | `services/ride-request/`, `services/matching/`, `services/dispatch/`, `services/common/rideshare/hashring.py`, `services/common/tests/`, `proto/`, `deploy/apps/ride-request/`, `deploy/apps/matching/`, `deploy/apps/dispatch/`, `deploy/platform/`, `loadtest/` | Kubernetes scale, consistent hashing, Prometheus, Grafana, logs, the public UI |
-| Person 3 | `services/trip-tracking/`, `services/fare/`, `services/demand-analytics/`, `services/demand-sink/`, `deploy/apps/trip-tracking/`, `deploy/apps/topics/`, `deploy/apps/demand-sink/` | The Fare Lambda, REST/gRPC/SQS on the trace, Flink |
+| Person 3 | `services/trip-tracking/`, `services/fare/`, `services/demand-analytics/`, `services/demand-sink/`, `deploy/apps/trip-tracking/`, `deploy/apps/topics/`, `deploy/apps/demand-sink/`                                                                               | The Fare Lambda, REST/gRPC/SQS on the trace, Flink                             |
 
-`docs/design.md` and `task_division.txt` are filled in before submission. Person 1 merges the design document.
+`docs/design.md` and `task_division.txt` are filled in before submission. The platform maintainer merges the design document.
 
 ## Layout
 
@@ -40,4 +40,4 @@ Images are published with `scripts/push.sh`. The printed tag is committed into t
 
 ## Order
 
-Person 1 applies `infra/bootstrap`, then `infra/platform`, then `infra/k8s`. Person 2 and Person 3 implement against the comments in their directories. `infra/lambda` waits for `services/fare/dist/fare.zip`. `infra/emr` is applied on the demo day and destroyed the same day.
+The platform maintainer applies `infra/bootstrap`, then `infra/platform`, then `infra/k8s`. Person 2 and Person 3 implement against the comments in their directories. `infra/lambda` waits for `services/fare/dist/fare.zip`. `infra/emr` is applied on the demo day and destroyed the same day.

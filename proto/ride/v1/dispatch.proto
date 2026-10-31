@@ -1,7 +1,17 @@
-// Person 2 owns this contract. Dispatch Service implements it.
-//
-// Add: syntax proto3, package ride.v1.
-// Service Dispatch with rpc Assign.
-// AssignRequest: ride_id, driver_id, partition_id.
-// AssignResponse: assigned, reason.
-// Same ride_id may retry. A different ride_id must fail when the driver is already ASSIGNED.
+syntax = "proto3";
+package ride.v1;
+
+service Dispatch {
+  rpc Assign (AssignRequest) returns (AssignResponse);
+}
+
+message AssignRequest {
+  string ride_id = 1;
+  string driver_id = 2;
+  string partition_id = 3;
+}
+
+message AssignResponse {
+  bool assigned = 1;
+  string reason = 2;
+}

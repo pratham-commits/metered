@@ -2,5 +2,5 @@
 # Chart aws-for-fluent-bit from https://aws.github.io/eks-charts, targetRevision 0.1.34.
 # cloudWatchLogs enabled, region ap-south-1, log group /rideshare/apps.
 # Destination namespace amazon-cloudwatch. Automated sync, CreateNamespace=true.
-# If the pods crash with AccessDenied, Person 1 adds logs:CreateLogStream and PutLogEvents
+# If the pods crash with AccessDenied, the platform maintainer adds logs:CreateLogStream and PutLogEvents
 # to the EKS node role and applies infra/platform again.

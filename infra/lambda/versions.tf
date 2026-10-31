@@ -1,3 +1,26 @@
-# Person 1. Apply only after Person 3 has built services/fare/dist/fare.zip.
-# Same providers and remote state as a slim platform reader: aws only.
-# Backend key lambda/terraform.tfstate.
+terraform {
+  required_version = ">= 1.9.0"
+  required_providers {
+    aws        = { source = "hashicorp/aws", version = "~> 5.70" }
+  }
+  backend "s3" {
+    bucket         = "rideshare-tfstate-ACCOUNT_ID"
+    key            = "lambda/terraform.tfstate"
+    region         = "ap-south-1"
+    dynamodb_table = "rideshare-tf-lock"
+    encrypt        = true
+  }
+}
+
+provider "aws" { region = "ap-south-1" }
+
+data "terraform_remote_state" "platform" {
+  backend = "s3"
+  config = {
+    bucket         = "rideshare-tfstate-ACCOUNT_ID"
+    key            = "platform/terraform.tfstate"
+    region         = "ap-south-1"
+    dynamodb_table = "rideshare-tf-lock"
+  }
+}
+

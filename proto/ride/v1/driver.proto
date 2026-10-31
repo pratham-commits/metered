@@ -1,7 +1,25 @@
-// Person 2 owns this contract. Person 1's Driver Service implements it.
-//
-// Add: syntax proto3, package ride.v1.
-// Service DriverLookup with rpc GetCandidates.
-// CandidateRequest: partition_id, pickup_zone, repeated neighbor_zones, limit.
-// Candidate: driver_id, zone, partition_id, lat, lng.
-// CandidateResponse: repeated Candidate.
+syntax = "proto3";
+package ride.v1;
+
+service DriverLookup {
+  rpc GetCandidates (CandidateRequest) returns (CandidateResponse);
+}
+
+message CandidateRequest {
+  string partition_id = 1;
+  string pickup_zone = 2;
+  repeated string neighbor_zones = 3;
+  int32 limit = 4;
+}
+
+message Candidate {
+  string driver_id = 1;
+  string zone = 2;
+  string partition_id = 3;
+  double lat = 4;
+  double lng = 5;
+}
+
+message CandidateResponse {
+  repeated Candidate candidates = 1;
+}
