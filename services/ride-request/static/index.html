@@ -1,28 +1,879 @@
-<!--
-  Person 2. The one public page. Six sections: Rider, Driver, Trace, Ring, Demand, Checklist.
-  Talk only to this origin under /api/*. Do not call the other services from the browser.
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>metered</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root {
+      --ink: #0b1c2c;
+      --ink-soft: #1e3a55;
+      --muted: #5b738a;
+      --line: #c5d4e3;
+      --paper: #f3f7fb;
+      --paper-2: #e8f0f8;
+      --surface: rgba(255, 255, 255, 0.72);
+      --accent: #1d6fd8;
+      --accent-deep: #0f4fa8;
+      --accent-soft: #d7e8fb;
+      --warn: #b42318;
+      --map-h: min(58vh, 520px);
+    }
 
-  Live location (required for the GCP viva):
-  - Rider pickup: navigator.geolocation.getCurrentPosition.
-  - Driver presence: navigator.geolocation.watchPosition, throttled (~15s).
-  - Map: Leaflet + OpenStreetMap, no API key. Drag pickup, click for drop.
-  - Show the computed H3 cell for pickup, drop and driver.
-  - If permission is denied, show manual lat/lng inputs. Do NOT fall back to a fixed city
-    and do NOT use legacy fixed cells such as z11 / z22.
+    * { box-sizing: border-box; }
 
-  APIs:
-  - GET  /api/config
-  - GET  /api/zones?lat=&lng=&k=3
-  - POST /api/riders, /api/drivers, /api/drivers/{id}/presence
-  - POST /api/ride-requests with live pickup/drop coordinates and idempotency_key
-  - GET  /api/ride-requests/{id} (trace hops)
-  - POST /api/trips/{id}/progress
-  - GET  /api/demand
-  - GET  /api/ring?lat=&lng=&k=3
-  - POST /api/ring/preview {nodes, zones} — never mutates HASH_NODES
-  - POST /api/demo/conflict with header X-Demo-Token from ?demo=
-  - GET  /api/checklist
+    html { scroll-behavior: smooth; }
 
-  Money is stored in paise. Display rupees as cents / 100.
-  Geolocation needs HTTPS or localhost; the GKE Ingress must terminate TLS for the demo.
--->
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Plus Jakarta Sans", sans-serif;
+      background:
+        radial-gradient(1200px 600px at 8% -10%, #cfe3f8 0%, transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, #dceaf8 0%, transparent 50%),
+        linear-gradient(180deg, var(--paper-2) 0%, var(--paper) 35%, #eef3f8 100%);
+      min-height: 100vh;
+    }
+
+    a { color: inherit; }
+
+    .shell {
+      width: min(1100px, calc(100% - 2.5rem));
+      margin-inline: auto;
+    }
+
+    .top {
+      border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+      backdrop-filter: blur(10px);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: color-mix(in srgb, var(--paper) 82%, transparent);
+      animation: rise 0.7s ease both;
+    }
+
+    .top .shell {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.1rem 0;
+    }
+
+    .wordmark {
+      font-family: "Fraunces", serif;
+      font-weight: 600;
+      font-size: 1.35rem;
+      letter-spacing: -0.03em;
+      color: var(--ink);
+    }
+
+    .wordmark span { color: var(--accent); }
+
+    .top nav {
+      display: flex;
+      gap: 1.25rem;
+      font-size: 0.8rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .top nav a {
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    .top nav a:hover { color: var(--accent); }
+
+    .hero {
+      padding: 2.75rem 0 1.5rem;
+      animation: rise 0.85s 0.08s ease both;
+    }
+
+    .hero .eyebrow {
+      font-size: 0.72rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 0 0 0.85rem;
+      font-weight: 600;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-family: "Fraunces", serif;
+      font-weight: 600;
+      font-size: clamp(3.2rem, 9vw, 5.6rem);
+      line-height: 0.92;
+      letter-spacing: -0.045em;
+      color: var(--ink);
+    }
+
+    .hero h1 em {
+      font-style: italic;
+      font-weight: 500;
+      color: var(--accent-deep);
+    }
+
+    .hero p {
+      margin: 1.1rem 0 0;
+      max-width: 32rem;
+      color: var(--muted);
+      font-size: 1.05rem;
+      line-height: 1.55;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+      align-items: center;
+    }
+
+    .hero-actions button {
+      width: auto;
+      margin-top: 0;
+      padding-inline: 1.15rem;
+    }
+
+    main.shell {
+      padding: 0 0 3.5rem;
+      display: grid;
+      gap: 1.25rem;
+    }
+
+    .stage {
+      grid-column: 1 / -1;
+      animation: rise 0.9s 0.14s ease both;
+    }
+
+    .stage-head {
+      display: grid;
+      gap: 0.35rem;
+      margin-bottom: 0.85rem;
+    }
+
+    .stage-head h2 {
+      margin: 0;
+      font-family: "Fraunces", serif;
+      font-size: 1.65rem;
+      font-weight: 550;
+      letter-spacing: -0.02em;
+    }
+
+    .stage-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+      max-width: 40rem;
+      text-align: left;
+    }
+
+    #map {
+      height: var(--map-h);
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #d5e4f2;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Only tint free OSM fallback; Mapbox light already matches the palette */
+    #map:not(.mapbox-tiles) .leaflet-tile-pane {
+      filter: saturate(0.72) hue-rotate(198deg) brightness(1.04) contrast(1.04);
+    }
+
+    #map .leaflet-control-attribution {
+      background: color-mix(in srgb, var(--paper) 88%, transparent) !important;
+      color: var(--muted);
+      font-size: 0.65rem;
+      border: none;
+    }
+
+    #map .leaflet-control-attribution a { color: var(--accent-deep); }
+
+    .pin {
+      background: transparent;
+      border: none;
+    }
+
+    .pin span {
+      display: block;
+      width: 14px;
+      height: 14px;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      box-shadow: 0 0 0 3px color-mix(in srgb, #fff 70%, transparent);
+    }
+
+    .pin-pickup span {
+      background: var(--accent);
+    }
+
+    .pin-drop span {
+      background: var(--ink-soft);
+      border-radius: 2px;
+      transform: none;
+    }
+
+    .panel-grid {
+      display: grid;
+      gap: 1.25rem;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      animation: rise 0.9s 0.2s ease both;
+    }
+
+    .lab-grid {
+      display: grid;
+      gap: 1.25rem;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      animation: rise 0.9s 0.26s ease both;
+    }
+
+    .panel {
+      padding: 1.15rem 1.2rem 1.3rem;
+      border-top: 1px solid var(--line);
+      background: var(--surface);
+      backdrop-filter: blur(8px);
+    }
+
+    .panel.wide { grid-column: 1 / -1; }
+
+    .panel h2 {
+      margin: 0 0 0.9rem;
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent-deep);
+      font-weight: 600;
+    }
+
+    label {
+      display: block;
+      font-size: 0.78rem;
+      margin: 0.55rem 0 0.25rem;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+
+    input, button, textarea {
+      width: 100%;
+      font: inherit;
+      padding: 0.55rem 0.65rem;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 0;
+    }
+
+    input:focus {
+      outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+      outline-offset: 1px;
+      border-color: var(--accent);
+    }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      cursor: pointer;
+      margin-top: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      transition: background 0.2s ease, transform 0.15s ease;
+    }
+
+    button:hover { background: var(--accent-deep); }
+    button:active { transform: translateY(1px); }
+
+    button.secondary {
+      background: transparent;
+      color: var(--ink-soft);
+      border-color: var(--line);
+    }
+
+    button.secondary:hover {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--accent-deep);
+    }
+
+    button.warn {
+      background: transparent;
+      color: var(--warn);
+      border-color: color-mix(in srgb, var(--warn) 45%, var(--line));
+    }
+
+    button.warn:hover {
+      background: color-mix(in srgb, var(--warn) 8%, #fff);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.85rem;
+      margin-top: 0.85rem;
+    }
+
+    .route {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.82rem;
+      margin: 0.55rem 0 0;
+      line-height: 1.45;
+    }
+
+    .meta strong {
+      color: var(--ink-soft);
+      font-weight: 600;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.78rem;
+    }
+
+    pre, .log {
+      background: #102033;
+      color: #d7e6f5;
+      font-size: 0.74rem;
+      padding: 0.85rem;
+      overflow: auto;
+      max-height: 220px;
+      white-space: pre-wrap;
+      margin: 0.65rem 0 0;
+      border: 1px solid #1c3550;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .search-wrap { position: relative; }
+
+    .suggest {
+      position: absolute;
+      z-index: 1000;
+      left: 0;
+      right: 0;
+      top: calc(100% + 2px);
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      background: #fff;
+      border: 1px solid var(--line);
+      max-height: 190px;
+      overflow: auto;
+    }
+
+    .suggest li {
+      padding: 0.55rem 0.65rem;
+      cursor: pointer;
+      font-size: 0.84rem;
+      border-bottom: 1px solid var(--line);
+      color: var(--ink-soft);
+    }
+
+    .suggest li:last-child { border-bottom: none; }
+    .suggest li:hover { background: var(--accent-soft); color: var(--accent-deep); }
+
+    .foot.shell {
+      padding: 1.25rem 0 2.5rem;
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      color: var(--muted);
+      font-size: 0.78rem;
+      border-top: 1px solid var(--line);
+    }
+
+    .foot span { font-family: "Fraunces", serif; color: var(--ink-soft); }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 860px) {
+      .shell { width: min(1100px, calc(100% - 1.5rem)); }
+      .panel-grid,
+      .lab-grid,
+      .route,
+      .row { grid-template-columns: 1fr; }
+      .hero-actions button { width: 100%; }
+      .top nav { display: none; }
+      :root { --map-h: 42vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="shell">
+      <div class="wordmark">metered<span>.</span></div>
+      <nav>
+        <a href="#ride">Ride</a>
+        <a href="#people">People</a>
+        <a href="#lab">Lab</a>
+      </nav>
+    </div>
+  </div>
+
+  <header class="hero shell">
+    <p class="eyebrow">Design that meters the trip</p>
+    <h1>metered<em>.</em></h1>
+    <p>One public origin for request, match, and proof. Search a place, watch H3 zones light up, and keep the fare in ₹.</p>
+    <div class="hero-actions">
+      <button type="button" onclick="document.getElementById('ride').scrollIntoView({behavior:'smooth'})">Request a ride</button>
+      <button type="button" class="secondary" onclick="document.getElementById('lab').scrollIntoView({behavior:'smooth'})">Open the lab</button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="stage" id="ride">
+      <div class="stage-head">
+        <h2>Map the route</h2>
+        <p>Search a place, drag pickup, click for drop. The map sits in the same blue field as the rest of metered.</p>
+      </div>
+      <div id="map"></div>
+
+      <div class="panel wide" style="border-top: none; margin-top: 0;">
+        <h2>Places</h2>
+        <div class="route">
+          <div>
+            <label>Pickup place</label>
+            <div class="search-wrap">
+              <input id="pickup-q" placeholder="e.g. Connaught Place, Delhi" autocomplete="off" />
+              <ul id="pickup-suggest" class="suggest" hidden></ul>
+            </div>
+            <label>Pickup lat</label><input id="pickup-lat" />
+            <label>Pickup lng</label><input id="pickup-lng" />
+            <p class="meta">Pickup H3: <strong id="pickup-zone">—</strong></p>
+          </div>
+          <div>
+            <label>Drop place</label>
+            <div class="search-wrap">
+              <input id="drop-q" placeholder="e.g. India Gate, Delhi" autocomplete="off" />
+              <ul id="drop-suggest" class="suggest" hidden></ul>
+            </div>
+            <label>Drop lat</label><input id="drop-lat" />
+            <label>Drop lng</label><input id="drop-lng" />
+            <p class="meta">Drop H3: <strong id="drop-zone">—</strong></p>
+          </div>
+        </div>
+        <button id="btn-ride">Create ride request</button>
+        <p class="meta">Ride id: <strong id="ride-id">—</strong> · Est. fare: <strong id="est-fare">—</strong></p>
+        <div class="row">
+          <button id="btn-trace" class="secondary">Refresh trace</button>
+          <button id="btn-conflict" class="warn">Conflict demo</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="panel-grid" id="people">
+      <section class="panel">
+        <h2>Rider</h2>
+        <label>Name</label><input id="rider-name" value="Ada" />
+        <label>Phone</label><input id="rider-phone" value="+919800000001" />
+        <button id="btn-rider">Register rider</button>
+        <p class="meta">Rider id: <strong id="rider-id">—</strong></p>
+      </section>
+
+      <section class="panel">
+        <h2>Driver</h2>
+        <label>Name</label><input id="driver-name" value="Bob" />
+        <label>Phone</label><input id="driver-phone" value="+919800000002" />
+        <button id="btn-driver">Register driver</button>
+        <button id="btn-online" class="secondary">Go online here</button>
+        <p class="meta">Driver id: <strong id="driver-id">—</strong></p>
+        <p class="meta">Zone / partition: <strong id="driver-zone">—</strong></p>
+      </section>
+    </div>
+
+    <div class="lab-grid" id="lab">
+      <section class="panel">
+        <h2>Trace</h2>
+        <pre id="trace">No ride yet.</pre>
+      </section>
+
+      <section class="panel">
+        <h2>Ring</h2>
+        <button id="btn-ring" class="secondary">Sample live cells (k=3)</button>
+        <button id="btn-ring-preview">Preview add p4</button>
+        <pre id="ring-out">—</pre>
+      </section>
+
+      <section class="panel">
+        <h2>Demand</h2>
+        <button id="btn-demand" class="secondary">Load demand</button>
+        <pre id="demand-out">—</pre>
+      </section>
+
+      <section class="panel wide">
+        <h2>Checklist</h2>
+        <button id="btn-checklist" class="secondary">Refresh checklist</button>
+        <pre id="checklist-out">—</pre>
+      </section>
+    </div>
+  </main>
+
+  <footer class="foot shell">
+    <span>metered.</span>
+    <div>H3 · hashring · hops · ₹ paise/100</div>
+  </footer>
+
+  <script>
+    const state = {
+      riderId: null,
+      driverId: null,
+      partitionId: null,
+      rideId: null,
+      pickup: null,
+      drop: null,
+      map: null,
+      pickupMarker: null,
+      dropMarker: null,
+      demoToken: new URLSearchParams(location.search).get("demo") || "",
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    const pinIcon = (kind) => L.divIcon({
+      className: `pin pin-${kind}`,
+      html: "<span></span>",
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
+    });
+
+    async function api(path, opts = {}) {
+      const headers = Object.assign({}, opts.headers || {});
+      if (opts.body && typeof opts.body === "object") {
+        headers["Content-Type"] = "application/json";
+        opts.body = JSON.stringify(opts.body);
+      }
+      const res = await fetch(path, { ...opts, headers });
+      const text = await res.text();
+      let data;
+      try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+      if (!res.ok) throw new Error(data.detail || text || res.statusText);
+      return data;
+    }
+
+    function rupees(cents) {
+      if (cents == null) return "—";
+      return "₹" + (Number(cents) / 100).toFixed(2);
+    }
+
+    function ensureMap(lat, lng) {
+      if (state.map) {
+        state.map.setView([lat, lng], Math.max(state.map.getZoom(), 14));
+        return;
+      }
+      initMap(lat, lng);
+    }
+
+    function setPickup(lat, lng) {
+      state.pickup = { lat, lng };
+      $("pickup-lat").value = lat.toFixed(6);
+      $("pickup-lng").value = lng.toFixed(6);
+      if (!state.map) return;
+      if (state.pickupMarker) state.pickupMarker.setLatLng([lat, lng]);
+      else state.pickupMarker = L.marker([lat, lng], {
+        draggable: true,
+        icon: pinIcon("pickup"),
+      }).addTo(state.map)
+        .on("dragend", (e) => {
+          const p = e.target.getLatLng();
+          setPickup(p.lat, p.lng);
+          refreshZones();
+        });
+      refreshZones();
+    }
+
+    function setDrop(lat, lng) {
+      state.drop = { lat, lng };
+      $("drop-lat").value = lat.toFixed(6);
+      $("drop-lng").value = lng.toFixed(6);
+      if (!state.map) return;
+      if (state.dropMarker) state.dropMarker.setLatLng([lat, lng]);
+      else state.dropMarker = L.marker([lat, lng], {
+        title: "drop",
+        icon: pinIcon("drop"),
+      }).addTo(state.map);
+      refreshZones();
+    }
+
+    function wirePlaceSearch(inputId, listId, apply) {
+      const input = $(inputId);
+      const list = $(listId);
+      let timer = null;
+      let req = 0;
+
+      const hide = () => { list.hidden = true; list.innerHTML = ""; };
+
+      input.addEventListener("input", () => {
+        const q = input.value.trim();
+        clearTimeout(timer);
+        if (q.length < 2) { hide(); return; }
+        timer = setTimeout(async () => {
+          const id = ++req;
+          try {
+            const data = await api(`/api/geocode?q=${encodeURIComponent(q)}&limit=5`);
+            if (id !== req) return;
+            list.innerHTML = "";
+            (data.results || []).forEach((r) => {
+              const li = document.createElement("li");
+              li.textContent = r.label;
+              li.onclick = () => {
+                input.value = r.label;
+                hide();
+                apply(r.lat, r.lng);
+              };
+              list.appendChild(li);
+            });
+            list.hidden = !(data.results && data.results.length);
+          } catch (e) {
+            hide();
+            console.warn("geocode", e.message || e);
+          }
+        }, 280);
+      });
+
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") hide();
+      });
+      document.addEventListener("click", (e) => {
+        if (!list.contains(e.target) && e.target !== input) hide();
+      });
+    }
+
+    wirePlaceSearch("pickup-q", "pickup-suggest", (lat, lng) => {
+      ensureMap(lat, lng);
+      setPickup(lat, lng);
+      if (state.map) state.map.setView([lat, lng], 14);
+    });
+    wirePlaceSearch("drop-q", "drop-suggest", (lat, lng) => {
+      ensureMap(lat, lng);
+      setDrop(lat, lng);
+      if (state.map) state.map.panTo([lat, lng]);
+    });
+
+    async function refreshZones() {
+      if (!state.pickup) return;
+      try {
+        const z = await api(`/api/zones?lat=${state.pickup.lat}&lng=${state.pickup.lng}&k=0`);
+        $("pickup-zone").textContent = (z.zones && z.zones[0]) || "—";
+      } catch (_) {}
+      if (!state.drop) return;
+      try {
+        const z = await api(`/api/zones?lat=${state.drop.lat}&lng=${state.drop.lng}&k=0`);
+        $("drop-zone").textContent = (z.zones && z.zones[0]) || "—";
+      } catch (_) {}
+    }
+
+    async function addBasemap(map) {
+      let token = "";
+      try {
+        const cfg = await api("/api/config");
+        token = (cfg.mapbox_token || "").trim();
+      } catch (_) {}
+
+      if (token) {
+        // Mapbox light style — soft blue-gray, no Carto API key
+        L.tileLayer(
+          `https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/256/{z}/{x}/{y}@2x?access_token=${encodeURIComponent(token)}`,
+          {
+            attribution: '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+            tileSize: 256,
+            maxZoom: 22,
+          }
+        ).addTo(map);
+        document.getElementById("map").classList.add("mapbox-tiles");
+        return;
+      }
+
+      // Fallback: OSM + blue tint (no key)
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19,
+      }).addTo(map);
+    }
+
+    async function initMap(lat, lng) {
+      state.map = L.map("map", {
+        zoomControl: true,
+        attributionControl: true,
+      }).setView([lat, lng], 14);
+
+      await addBasemap(state.map);
+
+      setPickup(lat, lng);
+      setDrop(lat + 0.01, lng + 0.01);
+      state.map.on("click", (e) => setDrop(e.latlng.lat, e.latlng.lng));
+      setTimeout(() => state.map.invalidateSize(), 80);
+    }
+
+    function useManualFallback() {
+      $("pickup-lat").placeholder = "required";
+      $("pickup-lng").placeholder = "required";
+      $("drop-lat").placeholder = "required";
+      $("drop-lng").placeholder = "required";
+      const apply = () => {
+        const plat = Number($("pickup-lat").value);
+        const plng = Number($("pickup-lng").value);
+        const dlat = Number($("drop-lat").value);
+        const dlng = Number($("drop-lng").value);
+        if (![plat, plng, dlat, dlng].every(Number.isFinite)) return;
+        if (!state.map) initMap(plat, plng);
+        else {
+          setPickup(plat, plng);
+          setDrop(dlat, dlng);
+          state.map.setView([plat, plng], 14);
+        }
+      };
+      ["pickup-lat", "pickup-lng", "drop-lat", "drop-lng"].forEach((id) => {
+        $(id).addEventListener("change", apply);
+      });
+      alert("Location permission denied. Search a place or enter lat/lng (no default city).");
+    }
+
+    $("btn-rider").onclick = async () => {
+      const data = await api("/api/riders", {
+        method: "POST",
+        body: { name: $("rider-name").value, phone: $("rider-phone").value },
+      });
+      state.riderId = data.id;
+      $("rider-id").textContent = data.id;
+    };
+
+    $("btn-driver").onclick = async () => {
+      const data = await api("/api/drivers", {
+        method: "POST",
+        body: { name: $("driver-name").value, phone: $("driver-phone").value },
+      });
+      state.driverId = data.id;
+      $("driver-id").textContent = data.id;
+    };
+
+    $("btn-online").onclick = async () => {
+      if (!state.driverId) throw new Error("register a driver first");
+      if (!state.pickup) throw new Error("need a location");
+      const data = await api(`/api/drivers/${state.driverId}/presence`, {
+        method: "POST",
+        body: {
+          status: "ONLINE",
+          lat: state.pickup.lat,
+          lng: state.pickup.lng,
+        },
+      });
+      state.partitionId = data.partition_id;
+      $("driver-zone").textContent = `${data.zone} / ${data.partition_id}`;
+    };
+
+    $("btn-ride").onclick = async () => {
+      if (!state.riderId) throw new Error("register a rider first");
+      if (!state.pickup || !state.drop) throw new Error("set pickup and drop");
+      const data = await api("/api/ride-requests", {
+        method: "POST",
+        body: {
+          rider_id: state.riderId,
+          pickup_lat: state.pickup.lat,
+          pickup_lng: state.pickup.lng,
+          drop_lat: state.drop.lat,
+          drop_lng: state.drop.lng,
+          idempotency_key: crypto.randomUUID(),
+        },
+      });
+      state.rideId = data.id;
+      $("ride-id").textContent = data.id;
+      $("est-fare").textContent = rupees(data.estimated_fare_cents);
+      setTimeout(() => $("btn-trace").click(), 1500);
+    };
+
+    $("btn-trace").onclick = async () => {
+      if (!state.rideId) return;
+      const data = await api(`/api/ride-requests/${state.rideId}`);
+      $("trace").textContent = JSON.stringify(data, null, 2);
+      if (data.ride && data.ride.assigned_driver_id) {
+        state.driverId = state.driverId || data.ride.assigned_driver_id;
+        state.partitionId = data.ride.assigned_partition_id || state.partitionId;
+      }
+    };
+
+    $("btn-conflict").onclick = async () => {
+      if (!state.rideId || !state.driverId || !state.partitionId) {
+        throw new Error("need an assigned ride (driver id + partition)");
+      }
+      const data = await api("/api/demo/conflict", {
+        method: "POST",
+        headers: { "X-Demo-Token": state.demoToken },
+        body: {
+          ride_id: state.rideId,
+          driver_id: state.driverId,
+          partition_id: state.partitionId,
+        },
+      });
+      $("trace").textContent = "conflict => " + JSON.stringify(data, null, 2);
+      $("btn-trace").click();
+    };
+
+    $("btn-ring").onclick = async () => {
+      if (!state.pickup) throw new Error("need location");
+      const data = await api(
+        `/api/ring?lat=${state.pickup.lat}&lng=${state.pickup.lng}&k=3`
+      );
+      $("ring-out").textContent = JSON.stringify(data, null, 2);
+      state._ringZones = data.zones;
+    };
+
+    $("btn-ring-preview").onclick = async () => {
+      const zones = state._ringZones || (await api(
+        `/api/ring?lat=${state.pickup.lat}&lng=${state.pickup.lng}&k=3`
+      )).zones;
+      const data = await api("/api/ring/preview", {
+        method: "POST",
+        body: { nodes: ["p0", "p1", "p2", "p3", "p4"], zones },
+      });
+      $("ring-out").textContent = JSON.stringify(data, null, 2);
+    };
+
+    $("btn-demand").onclick = async () => {
+      try {
+        const data = await api("/api/demand");
+        $("demand-out").textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        $("demand-out").textContent = String(e.message || e);
+      }
+    };
+
+    $("btn-checklist").onclick = async () => {
+      const data = await api("/api/checklist");
+      $("checklist-out").textContent = JSON.stringify(data, null, 2);
+    };
+
+    document.querySelectorAll("button[id]").forEach((btn) => {
+      const fn = btn.onclick;
+      if (!fn) return;
+      btn.onclick = async (ev) => {
+        try { await fn(ev); }
+        catch (e) { alert(e.message || e); }
+      };
+    });
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => initMap(pos.coords.latitude, pos.coords.longitude),
+        () => useManualFallback(),
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    } else {
+      useManualFallback();
+    }
+  </script>
+</body>
+</html>
