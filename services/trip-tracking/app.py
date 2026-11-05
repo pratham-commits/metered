@@ -4,10 +4,10 @@
 # status is ARRIVING, IN_PROGRESS, or COMPLETED.
 # COMPLETED requires distance_km and duration_sec.
 # Upsert trips, update ride_requests.status, record a REST/SQL hop.
-# Put a GPS sample at gps/{ride_id}/{timestamp}.json.
-# Publish TRIP_UPDATED. payload.status is the trip status. zone is the pickup zone.
+# Put a GPS sample at gps/{ride_id}/{timestamp}.json in the GCS trip bucket.
+# Publish TRIP_UPDATED. payload.status is the trip status. zone is the pickup H3 cell.
 # On COMPLETED, also put completions/{ride_id}.json with ride, rider, driver, partition,
-# pickup zone, drop zone, distance, duration, and completed_at.
-# Then release the driver back to AVAILABLE.
-# Record an EVENT/OBJECT hop with both S3 keys.
+# pickup/drop zones, actual pickup/drop coordinates, distance, duration, completed_at.
+# Then release the driver back to AVAILABLE in Firestore.
+# Record an EVENT/OBJECT hop with both GCS keys.
 # GET /demand returns {topic: demand-results, windows: latest window per zone}.

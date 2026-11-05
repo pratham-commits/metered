@@ -1,2 +1,3 @@
-# Person 2 fills this directory with prometheus.yaml, dashboard.yaml, podmonitor.yaml, and fluent-bit.yaml.
-# The file exists so Git tracks deploy/platform before those manifests are written.
+# Person 2 writes prometheus.yaml, dashboard.yaml and podmonitor.yaml here.
+# Until then only *.yaml.stub scaffolds exist. Argo CD excludes *.stub so an
+# empty sync is healthy. GKE ships container logs to Cloud Logging; no Fluent Bit.

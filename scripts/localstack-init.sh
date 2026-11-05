@@ -1,3 +1,4 @@
+# LEGACY AWS BASELINE — retained for the old LocalStack profile. Not used by GCP.
 #!/bin/sh
 set -eu
 for table in rideshare_driver_live rideshare_demand_windows; do

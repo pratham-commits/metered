@@ -17,7 +17,7 @@ spec:
         runAsUser: 65532
       containers:
         - name: migrate
-          image: ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/rideshare/rider:REPLACE_SHA
+          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/rider:21e1968
           command: ["python", "-m", "rideshare.migrate"]
           envFrom:
             - secretRef:

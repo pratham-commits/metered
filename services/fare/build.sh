@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
-# Person 3. Build services/fare/dist/fare.zip for the linux/amd64 Lambda runtime.
-#
-# Use public.ecr.aws/sam/build-python3.12 to pip install psycopg[binary]==3.2.4.
-# Copy handler.py and rideshare/__init__.py, fare.py, zones.py into the dist tree.
-# Zip from inside dist so the paths are handler.py and rideshare/*.py at the zip root.
-# Do not bundle boto3. The Lambda runtime already has it.
-# Tell the platform maintainer when services/fare/dist/fare.zip exists so they can apply infra/lambda.
+# Person 3. Optional local zip for inspecting the Cloud Run function source tree.
+# Terraform infra/functions builds its own archive from these sources when
+# estimate and finalize exist. Cloud Build installs requirements.txt in the cloud.
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+DIST="services/fare/dist"
+rm -rf "$DIST"
+mkdir -p "$DIST"
+cp services/fare/handler.py "$DIST/main.py"
+cp services/fare/requirements.txt "$DIST/requirements.txt"
+cp -a services/common/rideshare "$DIST/rideshare"
+find "$DIST/rideshare" -type d -name __pycache__ -prune -exec rm -rf {} +
+(cd "$DIST" && zip -qr fare.zip main.py requirements.txt rideshare)
+echo "$DIST/fare.zip"

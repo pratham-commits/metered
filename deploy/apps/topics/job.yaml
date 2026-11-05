@@ -1,5 +1,6 @@
-# Person 3. Argo CD Sync hook, wave -1.
-# Uses the trip-tracking image. Creates Kafka topics ride-events and demand-results,
-# 3 partitions and replication factor 3, and ignores TopicAlreadyExistsError.
-# Security protocol comes from the config map. Do not run this against local compose,
-# which has one broker. Local topics use replication factor 1.
+# Person 3. Optional Argo CD Sync hook, wave -1.
+# Terraform infra/k8s already creates ride-events and demand-results through
+# Strimzi KafkaTopic resources. Keep this job only if you need a second path.
+# If implemented, use the trip-tracking image, ignore TopicAlreadyExistsError,
+# and do not run it against local compose, which has one broker. Local topics
+# use replication factor 1.

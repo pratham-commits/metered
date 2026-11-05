@@ -1,3 +1,4 @@
-<idno>  <name>  Services: Rider, Driver. Tasks: (a) all Terraform, (d) Argo CD, (g) S3, RDS PostgreSQL, DynamoDB.
-<idno>  <name>  Services: Ride Request, Matching, Dispatch. Tasks: (c) EKS stateless services, HPA on Ride Request and Matching, k6, (f) consistent hashing, (h) Prometheus, Grafana, CloudWatch logs. Also the public web UI.
-<idno>  <name>  Services: Trip Tracking, Fare, Demand Analytics. Tasks: (b) Fare Lambda and the REST/gRPC/SQS path, (e) Flink on EMR.
+<idno>  <name>  Services: Rider, Driver. Tasks: (a) all Terraform, (d) Argo CD GitOps, (g) GCS, Cloud SQL PostgreSQL, Firestore.
+<idno>  <name>  Services: Ride Request, Matching, Dispatch. Tasks: (c) GKE stateless services, HPA on Ride Request and Matching, k6, (f) consistent hashing, (h) Prometheus, Grafana, Cloud Logging. Also the public web UI.
+<idno>  <name>  Services: Trip Tracking, Fare, Demand Analytics. Tasks: (b) Cloud Run functions and the REST/gRPC/Pub/Sub path, (e) Flink on Dataproc.
+Note: the group has 3 members, so the split is 3/3/2 services. The assignment's 2-services-per-member line assumes 4 members.

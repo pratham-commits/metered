@@ -1,31 +1,68 @@
 #!/usr/bin/env python3
-"""Set non-secret AWS identifiers without creating cloud resources."""
+"""Set non-secret GCP identifiers without creating cloud resources."""
 
 import argparse
 import re
 from pathlib import Path
 
-ACCOUNT_ID_PATTERN = re.compile(r"[0-9]{12}")
+PROJECT_ID_PATTERN = re.compile(r"[a-z][a-z0-9-]{4,28}[a-z0-9]")
 IMAGE_TAG_PATTERN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}")
-IMAGE_REFERENCE_PATTERN = re.compile(r"(image: \S+/rideshare/(?:rider|driver):)[^\s]+")
-DEPLOYMENT_FILES = (
-    "rider/deployment.yaml",
-    "driver/deployment.yaml",
-    "migrate/job.yaml",
+IMAGE_REFERENCE_PATTERN = re.compile(
+    r"(image: \S+/rideshare/(?P<service>[a-z][a-z0-9-]*):)[^\s]+"
 )
+
+SERVICE_FILES = {
+    "rider": "rider/deployment.yaml",
+    "driver": "driver/deployment.yaml",
+    "migrate": "migrate/job.yaml",
+    "ride-request": "ride-request/deployment.yaml",
+    "matching": "matching/deployment.yaml",
+    "dispatch": "dispatch/deployment.yaml",
+    "trip-tracking": "trip-tracking/deployment.yaml",
+    "demand-sink": "demand-sink/deployment.yaml",
+}
+DEPLOYMENT_FILES = tuple(SERVICE_FILES.values())
+IMAGE_SERVICES = {
+    "rider",
+    "driver",
+    "ride-request",
+    "matching",
+    "dispatch",
+    "trip-tracking",
+    "demand-sink",
+}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--account-id", required=True)
+    parser.add_argument("--project-id", required=True)
     parser.add_argument("--rider-tag")
     parser.add_argument("--driver-tag")
+    parser.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        metavar="SERVICE=TAG",
+        help="tag for any service; may be repeated",
+    )
     args = parser.parse_args(argv)
-    if not ACCOUNT_ID_PATTERN.fullmatch(args.account_id):
-        parser.error("--account-id must be exactly 12 digits")
-    for tag in (args.rider_tag, args.driver_tag):
-        if tag and not IMAGE_TAG_PATTERN.fullmatch(tag):
+    if not PROJECT_ID_PATTERN.fullmatch(args.project_id):
+        parser.error("--project-id must be a valid 6-30 character GCP project id")
+
+    tags: dict[str, str] = {}
+    if args.rider_tag:
+        tags["rider"] = args.rider_tag
+    if args.driver_tag:
+        tags["driver"] = args.driver_tag
+    for item in args.tag:
+        service, separator, tag = item.partition("=")
+        if not separator or service not in IMAGE_SERVICES:
+            parser.error(f"--tag expects SERVICE=TAG with SERVICE in {sorted(IMAGE_SERVICES)}")
+        tags[service] = tag
+    for tag in tags.values():
+        if not IMAGE_TAG_PATTERN.fullmatch(tag):
             parser.error("invalid image tag")
+    args.tags = tags
     return args
 
 
@@ -33,12 +70,19 @@ def configure_files(root: Path, args: argparse.Namespace) -> None:
     paths = sorted((root / "infra").rglob("*.tf"))
     paths.extend(root / "deploy/apps" / name for name in DEPLOYMENT_FILES)
     for path in paths:
+        if not path.exists():
+            continue
         original = path.read_text()
-        updated = original.replace("ACCOUNT_ID", args.account_id)
+        updated = original.replace("PROJECT_ID", args.project_id)
         if path.suffix == ".yaml":
-            tag = args.driver_tag if path.parent.name == "driver" else args.rider_tag
-            if tag:
-                updated = IMAGE_REFERENCE_PATTERN.sub(lambda match: match[1] + tag, updated)
+            updated = IMAGE_REFERENCE_PATTERN.sub(
+                lambda match: (
+                    match.group(1) + args.tags[match.group("service")]
+                    if match.group("service") in args.tags
+                    else match.group(0)
+                ),
+                updated,
+            )
         if updated != original:
             path.write_text(updated)
 
@@ -46,7 +90,7 @@ def configure_files(root: Path, args: argparse.Namespace) -> None:
 def main() -> None:
     args = parse_args()
     configure_files(Path(__file__).resolve().parents[1], args)
-    print("Configured platform and profile service files. Review git diff before committing. No AWS resources created.")
+    print("Configured GCP project and image tags. Review git diff before committing. No GCP resources created.")
 
 
 if __name__ == "__main__":

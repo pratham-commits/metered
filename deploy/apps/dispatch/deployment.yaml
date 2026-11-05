@@ -1,3 +1,5 @@
 # Person 2. Deployment, Service, and ServiceAccount named dispatch.
 # Ports http 8005 and grpc 9005. 2 replicas. No Ingress.
-# Role arn:aws:iam::ACCOUNT_ID:role/rideshare-dispatch
+# ServiceAccount annotation:
+#   iam.gke.io/gcp-service-account: rideshare-dispatch@metered-513804.iam.gserviceaccount.com
+# Mount rideshare-kafka-cluster-ca-cert at /etc/kafka for Kafka TLS.

@@ -1,2 +1,2 @@
-# Person 3. Same pins as services/common/requirements.txt.
-# This process is part of Demand Analytics. It is not a ninth service.
+# Person 2/3 scaffold. The image installs services/common/requirements.txt.
+-r ../common/requirements.txt

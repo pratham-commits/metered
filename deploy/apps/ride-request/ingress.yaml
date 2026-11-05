@@ -1,4 +1,7 @@
-# Person 2. Internet-facing ALB for the public URL.
-# Ingress class alb, target-type ip, listen HTTP 80.
-# Path / prefix to Service ride-request port 8003.
-# Namespace rideshare.
+# Person 2. Internet-facing GKE Ingress for the public URL.
+# Use kubernetes.io/ingress.class: gke (or the default GKE class).
+# Reserve a global static IP and set:
+#   kubernetes.io/ingress.global-static-ip-name: rideshare-ip
+# Path / prefix to Service ride-request port 8003 in namespace rideshare.
+# Add a ManagedCertificate and an HTTPS frontend because browser geolocation
+# requires HTTPS (except on localhost).

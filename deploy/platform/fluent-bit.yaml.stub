@@ -1,0 +1,6 @@
+# Person 2. Do NOT deploy Fluent Bit on GKE for this project.
+# GKE logging_config already ships container stdout/stderr to Cloud Logging.
+# Keep this stub only as a reminder. Prove letter h logs with a Cloud Logging query:
+#   resource.type="k8s_container"
+#   resource.labels.namespace_name="rideshare"
+#   jsonPayload.ride_id="YOUR_RIDE_ID"

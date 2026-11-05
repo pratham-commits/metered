@@ -1,4 +1,6 @@
 # Person 3. Deployment, Service, and ServiceAccount named demand-sink.
 # Port http 8010. 1 replica.
-# Role arn:aws:iam::ACCOUNT_ID:role/rideshare-demand-sink
+# ServiceAccount annotation:
+#   iam.gke.io/gcp-service-account: rideshare-demand-sink@metered-513804.iam.gserviceaccount.com
 # envFrom the config map and the secret. The HTTP port name must be http.
+# Kafka TLS: mount rideshare-kafka-cluster-ca-cert at /etc/kafka.

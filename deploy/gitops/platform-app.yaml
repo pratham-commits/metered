@@ -7,10 +7,13 @@ spec:
   project: default
   source:
     repoURL: https://github.com/pratham-commits/metered.git
-    targetRevision: main
+    targetRevision: gcp-migration
     path: deploy/platform
     directory:
       recurse: true
+      # Person 2 replaces the *.yaml.stub files with real manifests, then removes
+      # this exclude (or narrows it) so Argo CD syncs Prometheus/Grafana.
+      exclude: "{*.stub,.gitkeep,README.md}"
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring

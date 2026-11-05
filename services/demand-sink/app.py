@@ -1,4 +1,4 @@
-# Person 3. Copies demand-results into rideshare_demand_windows. Port 8010.
+# Person 3. Copies demand-results into Firestore rideshare_demand_windows. Port 8010.
 #
 # install(app, "demand-sink") with no database readiness check.
 # A daemon thread consumes KAFKA_TOPIC_RESULTS, group demand-sink, from earliest.
@@ -6,3 +6,4 @@
 # request_count, assigned_count, online_drivers, queue_length, imbalance, topic.
 # If the topic does not exist yet, catch the error, sleep 5 seconds, and try again.
 # The thread must stay alive until the topic appears.
+# Kafka TLS uses KAFKA_SSL_CA_FILE from the mounted Strimzi CA secret.

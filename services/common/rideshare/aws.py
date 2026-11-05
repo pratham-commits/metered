@@ -6,8 +6,6 @@ from datetime import datetime, timezone
 import boto3
 from botocore.exceptions import ClientError
 
-from rideshare.zones import all_zones
-
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -187,12 +185,23 @@ class Store:
         return {key: value["S"] for key, value in items[0].items()}
 
     def latest_all(self) -> list[dict]:
-        rows = []
-        for zone in all_zones():
-            row = self.latest_demand(zone)
-            if row:
-                rows.append(row)
-        return rows
+        # Legacy AWS path. H3 cells are not enumerable, so scan recent windows
+        # and keep the newest row per zone.
+        latest: dict[str, dict] = {}
+        kwargs = dict(TableName=self.demand_table, ConsistentRead=True)
+        while True:
+            resp = self.ddb.scan(**kwargs)
+            for raw in resp.get("Items", []):
+                row = {key: value["S"] for key, value in raw.items()}
+                zone = row.get("zone")
+                if not zone:
+                    continue
+                current = latest.get(zone)
+                if current is None or row.get("window_start", "") > current.get("window_start", ""):
+                    latest[zone] = row
+            if not resp.get("LastEvaluatedKey"):
+                return list(latest.values())
+            kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
     def put_demand(self, item: dict) -> None:
         self.ddb.put_item(

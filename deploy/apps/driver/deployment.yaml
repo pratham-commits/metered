@@ -21,7 +21,7 @@ spec:
         runAsUser: 65532
       containers:
         - name: driver
-          image: ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/rideshare/driver:REPLACE_SHA
+          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/driver:21e1968
           ports:
             - containerPort: 8002
             - containerPort: 9002
@@ -33,6 +33,10 @@ spec:
           env:
             - name: SERVICE_NAME
               value: driver
+          volumeMounts:
+            - name: kafka-ca
+              mountPath: /etc/kafka
+              readOnly: true
           resources:
             requests:
               cpu: 100m
@@ -50,6 +54,13 @@ spec:
               path: /healthz
               port: 8002
             initialDelaySeconds: 10
+      volumes:
+        - name: kafka-ca
+          secret:
+            secretName: rideshare-kafka-cluster-ca-cert
+            items:
+              - key: ca.crt
+                path: ca.crt
 ---
 apiVersion: v1
 kind: Service
@@ -73,4 +84,4 @@ metadata:
   name: driver
   namespace: rideshare
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/rideshare-driver
+    iam.gke.io/gcp-service-account: rideshare-driver@metered-513804.iam.gserviceaccount.com

@@ -1,8 +1,9 @@
-# Person 2. ConfigMap rideshare-dashboard in namespace monitoring.
+# Person 2. Rename to dashboard.yaml when implementing.
+# ConfigMap rideshare-dashboard in namespace monitoring.
 # Label grafana_dashboard=1 so the sidecar loads it.
 # Dashboard title "Ride Sharing", uid rideshare.
-# Four panels, which are the four metrics the professor named:
+# Four panels required by the professor:
 #   RPS: sum(rate(http_requests_total[1m]))
-#   Error rate: 5xx rate divided by total rate
+#   Error rate: 5xx rate / clamp_min(total, 1)
 #   Latency p95 from http_request_duration_seconds_bucket
 #   Nodes ready: kube_node_status_condition Ready=true

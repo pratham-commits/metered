@@ -2,13 +2,27 @@
   Person 2. The one public page. Six sections: Rider, Driver, Trace, Ring, Demand, Checklist.
   Talk only to this origin under /api/*. Do not call the other services from the browser.
 
-  Rider: create a profile, pick pickup and drop zones, request a ride.
-  Driver: create a profile, go online at a zone center, move the trip ARRIVING -> IN_PROGRESS -> COMPLETED.
-  Trace: refresh the ride and show every hop. Conflict button sends X-Demo-Token from the ?demo= query.
-  Ring: show the live ring, then preview adding p4 and print moved versus stayed.
-  Demand: print the latest windows.
-  Checklist: table of title, status, evidence.
+  Live location (required for the GCP viva):
+  - Rider pickup: navigator.geolocation.getCurrentPosition.
+  - Driver presence: navigator.geolocation.watchPosition, throttled (~15s).
+  - Map: Leaflet + OpenStreetMap, no API key. Drag pickup, click for drop.
+  - Show the computed H3 cell for pickup, drop and driver.
+  - If permission is denied, show manual lat/lng inputs. Do NOT fall back to a fixed city
+    and do NOT use legacy fixed cells such as z11 / z22.
 
-  Zone dropdowns are filled from GET /api/zones. Default pickup z11 and drop z22.
-  Money is stored in paise. Display rupees as cents / 100 when you render a fare.
+  APIs:
+  - GET  /api/config
+  - GET  /api/zones?lat=&lng=&k=3
+  - POST /api/riders, /api/drivers, /api/drivers/{id}/presence
+  - POST /api/ride-requests with live pickup/drop coordinates and idempotency_key
+  - GET  /api/ride-requests/{id} (trace hops)
+  - POST /api/trips/{id}/progress
+  - GET  /api/demand
+  - GET  /api/ring?lat=&lng=&k=3
+  - POST /api/ring/preview {nodes, zones} — never mutates HASH_NODES
+  - POST /api/demo/conflict with header X-Demo-Token from ?demo=
+  - GET  /api/checklist
+
+  Money is stored in paise. Display rupees as cents / 100.
+  Geolocation needs HTTPS or localhost; the GKE Ingress must terminate TLS for the demo.
 -->

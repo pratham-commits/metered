@@ -1,8 +1,9 @@
-# Person 2. Letter h. Argo CD Application named prometheus in namespace argocd.
+# Person 2. Letter h. Rename to prometheus.yaml when implementing.
+# Argo CD Application named prometheus in namespace argocd.
 # Chart kube-prometheus-stack from the prometheus-community Helm repo, start at 69.8.2.
 # If that version is rejected, commit the latest 69.x or 70.x instead of helm-installing by hand.
 # Grafana admin user and password come from Secret rideshare-secret in namespace monitoring.
-# Grafana Service is an internet-facing NLB via the AWS Load Balancer Controller.
+# Grafana Service is an internet-facing GKE LoadBalancer (type LoadBalancer).
 # Enable the dashboard sidecar for label grafana_dashboard.
 # prometheusSpec: serviceMonitorSelectorNilUsesHelmValues false, same for pod monitors.
 # Destination namespace monitoring. Automated sync and ServerSideApply=true.

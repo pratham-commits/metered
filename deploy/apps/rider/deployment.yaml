@@ -21,7 +21,7 @@ spec:
         runAsUser: 65532
       containers:
         - name: rider
-          image: ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/rideshare/rider:REPLACE_SHA
+          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/rider:21e1968
           ports:
             - containerPort: 8001
           envFrom:
@@ -68,3 +68,5 @@ kind: ServiceAccount
 metadata:
   name: rider
   namespace: rideshare
+  annotations:
+    iam.gke.io/gcp-service-account: rideshare-rider@metered-513804.iam.gserviceaccount.com

@@ -14,23 +14,71 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
-  localstack:
-    image: localstack/localstack:4.4
-    environment:
-      SERVICES: sqs,dynamodb,s3
-      AWS_DEFAULT_REGION: ap-south-1
-      SQS_ENDPOINT_STRATEGY: path
+
+  firestore:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command:
+      - gcloud
+      - beta
+      - emulators
+      - firestore
+      - start
+      - --host-port=0.0.0.0:8080
+      - --project=rideshare-local
     ports:
-      - 4566:4566
-    volumes:
-      - ./scripts/localstack-init.sh:/etc/localstack/init/ready.d/init.sh
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - test -f /tmp/rideshare-ready
-      interval: 5s
-      timeout: 3s
-      retries: 30
+      - 8080:8080
+
+  pubsub:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command:
+      - gcloud
+      - beta
+      - emulators
+      - pubsub
+      - start
+      - --host-port=0.0.0.0:8085
+      - --project=rideshare-local
+    ports:
+      - 8085:8085
+
+  gcs:
+    image: fsouza/fake-gcs-server:1.52.2
+    command:
+      - -scheme
+      - http
+      - -port
+      - "4443"
+      - -backend
+      - memory
+      - -public-host
+      - gcs:4443
+    ports:
+      - 4443:4443
+
+  gcp-init:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      firestore:
+        condition: service_started
+      pubsub:
+        condition: service_started
+      gcs:
+        condition: service_started
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until curl -s http://firestore:8080/ >/dev/null; do sleep 1; done
+        until curl -s http://pubsub:8085/ >/dev/null; do sleep 1; done
+        until curl -s "http://gcs:4443/storage/v1/b?project=rideshare-local" >/dev/null; do sleep 1; done
+        curl -s -X PUT "http://pubsub:8085/v1/projects/rideshare-local/topics/rideshare-match-jobs" >/dev/null || true
+        curl -s -X PUT "http://pubsub:8085/v1/projects/rideshare-local/topics/rideshare-match-jobs-dlq" >/dev/null || true
+        curl -s -X PUT "http://pubsub:8085/v1/projects/rideshare-local/subscriptions/rideshare-match-jobs-sub" \
+          -H "Content-Type: application/json" \
+          -d '{"topic":"projects/rideshare-local/topics/rideshare-match-jobs"}' >/dev/null || true
+        curl -s -X POST "http://gcs:4443/storage/v1/b?project=rideshare-local" \
+          -H "Content-Type: application/json" \
+          -d '{"name":"rideshare-trip-files-local"}' >/dev/null || true
+
   kafka:
     image: apache/kafka:3.9.0
     environment:
@@ -54,6 +102,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 30
+
   migrate:
     build:
       context: .
@@ -67,68 +116,93 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
   rider:
     build:
       context: .
       dockerfile: services/rider/Dockerfile
-    environment:
+    environment: &gcp-env
       DATABASE_URL: postgresql://rideshare:rideshare@postgres:5432/rideshare
-      AWS_REGION: ap-south-1
-      AWS_ENDPOINT_URL: http://localstack:4566
-      DRIVER_TABLE: rideshare_driver_live
-      DEMAND_TABLE: rideshare_demand_windows
+      GCP_PROJECT: rideshare-local
+      GOOGLE_CLOUD_PROJECT: rideshare-local
+      STORAGE_BACKEND: gcp
+      FIRESTORE_EMULATOR_HOST: firestore:8080
+      PUBSUB_EMULATOR_HOST: pubsub:8085
+      STORAGE_EMULATOR_HOST: http://gcs:4443
+      FIRESTORE_DATABASE: (default)
+      DRIVER_COLLECTION: rideshare_driver_live
+      DEMAND_COLLECTION: rideshare_demand_windows
       TRIP_BUCKET: rideshare-trip-files-local
-      MATCH_QUEUE_URL: http://localstack:4566/queue/ap-south-1/000000000000/rideshare-match-jobs
+      MATCH_TOPIC: rideshare-match-jobs
+      MATCH_SUBSCRIPTION: rideshare-match-jobs-sub
       KAFKA_BOOTSTRAP: kafka:9092
       KAFKA_SECURITY_PROTOCOL: PLAINTEXT
       KAFKA_TOPIC_EVENTS: ride-events
       KAFKA_TOPIC_RESULTS: demand-results
       HASH_NODES: p0,p1,p2,p3
+      H3_RESOLUTION: "8"
+      H3_NEIGHBOR_K: "1"
       FARE_ESTIMATE_URL: ""
       DEMO_TOKEN: local-demo-token
       SERVICE_NAME: rider
-      AWS_ACCESS_KEY_ID: test
-      AWS_SECRET_ACCESS_KEY: test
-      AWS_EC2_METADATA_DISABLED: "true"
     depends_on:
       migrate:
         condition: service_completed_successfully
-      localstack:
-        condition: service_healthy
+      gcp-init:
+        condition: service_completed_successfully
       kafka:
         condition: service_healthy
     ports:
       - 127.0.0.1:8001:8001
+
   driver:
     build:
       context: .
       dockerfile: services/driver/Dockerfile
     environment:
-      DATABASE_URL: postgresql://rideshare:rideshare@postgres:5432/rideshare
-      AWS_REGION: ap-south-1
-      AWS_ENDPOINT_URL: http://localstack:4566
-      DRIVER_TABLE: rideshare_driver_live
-      DEMAND_TABLE: rideshare_demand_windows
-      TRIP_BUCKET: rideshare-trip-files-local
-      MATCH_QUEUE_URL: http://localstack:4566/queue/ap-south-1/000000000000/rideshare-match-jobs
-      KAFKA_BOOTSTRAP: kafka:9092
-      KAFKA_SECURITY_PROTOCOL: PLAINTEXT
-      KAFKA_TOPIC_EVENTS: ride-events
-      KAFKA_TOPIC_RESULTS: demand-results
-      HASH_NODES: p0,p1,p2,p3
-      FARE_ESTIMATE_URL: ""
-      DEMO_TOKEN: local-demo-token
+      <<: *gcp-env
       SERVICE_NAME: driver
-      AWS_ACCESS_KEY_ID: test
-      AWS_SECRET_ACCESS_KEY: test
-      AWS_EC2_METADATA_DISABLED: "true"
     depends_on:
       migrate:
         condition: service_completed_successfully
-      localstack:
-        condition: service_healthy
+      gcp-init:
+        condition: service_completed_successfully
       kafka:
         condition: service_healthy
     ports:
       - 127.0.0.1:8002:8002
       - 127.0.0.1:9002:9002
+
+# ---------------------------------------------------------------------------
+# LEGACY AWS BASELINE — retained for reference only. Disabled.
+# It used LocalStack for DynamoDB, SQS and S3. Set STORAGE_BACKEND=aws and
+# restore this service if you need to run the old baseline.
+# ---------------------------------------------------------------------------
+#  localstack:
+#    image: localstack/localstack:4.4
+#    environment:
+#      SERVICES: sqs,dynamodb,s3
+#      AWS_DEFAULT_REGION: ap-south-1
+#      SQS_ENDPOINT_STRATEGY: path
+#    ports:
+#      - 4566:4566
+#    volumes:
+#      - ./scripts/localstack-init.sh:/etc/localstack/init/ready.d/init.sh
+#    healthcheck:
+#      test:
+#        - CMD-SHELL
+#        - test -f /tmp/rideshare-ready
+#      interval: 5s
+#      timeout: 3s
+#      retries: 30
+#
+# Legacy rider/driver environment:
+#      AWS_REGION: ap-south-1
+#      AWS_ENDPOINT_URL: http://localstack:4566
+#      DRIVER_TABLE: rideshare_driver_live
+#      DEMAND_TABLE: rideshare_demand_windows
+#      TRIP_BUCKET: rideshare-trip-files-local
+#      MATCH_QUEUE_URL: http://localstack:4566/queue/ap-south-1/000000000000/rideshare-match-jobs
+#      AWS_ACCESS_KEY_ID: test
+#      AWS_SECRET_ACCESS_KEY: test
+#      AWS_EC2_METADATA_DISABLED: "true"

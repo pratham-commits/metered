@@ -1,4 +1,6 @@
 # Person 3. Deployment, Service, and ServiceAccount named trip-tracking.
 # Port http 8006. 2 replicas. No Ingress.
-# Role arn:aws:iam::ACCOUNT_ID:role/rideshare-trip-tracking
+# ServiceAccount annotation:
+#   iam.gke.io/gcp-service-account: rideshare-trip-tracking@metered-513804.iam.gserviceaccount.com
+# Mount rideshare-kafka-cluster-ca-cert at /etc/kafka for Kafka TLS.
 # The HTTP port name must be http so the PodMonitor can scrape /metrics.

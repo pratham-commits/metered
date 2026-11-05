@@ -1,38 +1,51 @@
+import os
 from math import asin, cos, radians, sin, sqrt
 
-MIN_LAT, MAX_LAT = 17.30, 17.50
-MIN_LNG, MAX_LNG = 78.30, 78.50
-ROWS, COLS = 4, 4
+import h3
+
+DEFAULT_RESOLUTION = 8
+DEFAULT_NEIGHBOR_K = 1
 
 
-def all_zones() -> list[str]:
-    return [f"z{row}{col}" for row in range(ROWS) for col in range(COLS)]
+def resolution() -> int:
+    value = int(os.environ.get("H3_RESOLUTION", str(DEFAULT_RESOLUTION)))
+    if not 0 <= value <= 15:
+        raise ValueError("H3_RESOLUTION must be between 0 and 15")
+    return value
+
+
+def neighbor_k() -> int:
+    value = int(os.environ.get("H3_NEIGHBOR_K", str(DEFAULT_NEIGHBOR_K)))
+    if value < 0:
+        raise ValueError("H3_NEIGHBOR_K must be zero or greater")
+    return value
 
 
 def zone_for(lat: float, lng: float) -> str:
-    lat = min(max(lat, MIN_LAT), MAX_LAT - 1e-9)
-    lng = min(max(lng, MIN_LNG), MAX_LNG - 1e-9)
-    row = int((lat - MIN_LAT) / (MAX_LAT - MIN_LAT) * ROWS)
-    col = int((lng - MIN_LNG) / (MAX_LNG - MIN_LNG) * COLS)
-    return f"z{row}{col}"
+    """Return the H3 cell for a live coordinate at the configured resolution."""
+    return h3.latlng_to_cell(float(lat), float(lng), resolution())
 
 
 def center(zone: str) -> tuple[float, float]:
-    row, col = int(zone[1]), int(zone[2])
-    height = (MAX_LAT - MIN_LAT) / ROWS
-    width = (MAX_LNG - MIN_LNG) / COLS
-    return (MIN_LAT + (row + 0.5) * height, MIN_LNG + (col + 0.5) * width)
+    lat, lng = h3.cell_to_latlng(zone)
+    return float(lat), float(lng)
 
 
-def neighbors(zone: str) -> list[str]:
-    row, col = int(zone[1]), int(zone[2])
-    found = []
-    for d_row in (-1, 0, 1):
-        for d_col in (-1, 0, 1):
-            next_row, next_col = row + d_row, col + d_col
-            if 0 <= next_row < ROWS and 0 <= next_col < COLS:
-                found.append(f"z{next_row}{next_col}")
-    return found
+def neighbors(zone: str, k: int | None = None) -> list[str]:
+    """Return the H3 grid disk, including the centre cell."""
+    return [str(cell) for cell in h3.grid_disk(zone, neighbor_k() if k is None else k)]
+
+
+def cells_around(lat: float, lng: float, k: int = 3) -> list[str]:
+    """Return a live H3 sample around a coordinate for the ring demo."""
+    return neighbors(zone_for(lat, lng), k)
+
+
+def is_valid_zone(zone: str) -> bool:
+    try:
+        return bool(h3.is_valid_cell(zone))
+    except (TypeError, ValueError):
+        return False
 
 
 def distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:

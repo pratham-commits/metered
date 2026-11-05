@@ -11,7 +11,7 @@ from uuid import UUID
 from psycopg.errors import UniqueViolation
 
 from ride.v1 import driver_pb2, driver_pb2_grpc
-from rideshare.aws import get_store
+from rideshare.store import get_store
 from rideshare.db import connection, ping
 from rideshare.hashring import HashRing, nodes_from_env
 from rideshare.logging_setup import configure
@@ -105,7 +105,7 @@ def presence(driver_id: UUID, body: PresenceIn):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     status = "AVAILABLE" if body.status == "ONLINE" else "OFFLINE"
     store = get_store()
-    # Serialize presence moves per profile; DynamoDB conditions arbitrate dispatch races.
+    # Serialize presence moves per profile; Firestore transactions arbitrate dispatch races.
     with connection() as conn:
         exists = conn.execute("SELECT id FROM drivers WHERE id = %s FOR UPDATE", (driver_id,)).fetchone()
         if not exists:
