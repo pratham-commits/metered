@@ -2,6 +2,7 @@ import json
 import os
 import uuid
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,26 @@ from rideshare.store import get_store
 from rideshare.web import install
 from rideshare.zones import cells_around, resolution, zone_for
 
+
+def _load_dotenv() -> None:
+    """Load service/.env first, then optional repo/.env (local only; no overwrite)."""
+    here = Path(__file__).resolve()
+    for path in (here.parent / ".env", here.parents[2] / ".env"):
+        if not path.is_file():
+            continue
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key, val = key.strip(), val.strip().strip("'").strip('"')
+            if key and key not in os.environ:
+                os.environ[key] = val
+        # Keep scanning so repo/.env can fill shared vars the service file omitted.
+
+
+_load_dotenv()
+
 RIDER_URL = os.environ.get("RIDER_URL", "http://rider.rideshare.svc.cluster.local:8001")
 DRIVER_HTTP = os.environ.get(
     "DRIVER_HTTP", "http://driver.rideshare.svc.cluster.local:8002"
@@ -33,6 +54,7 @@ DISPATCH_GRPC = os.environ.get(
 )
 FARE_ESTIMATE_URL = os.environ.get("FARE_ESTIMATE_URL", "").strip()
 DEMO_TOKEN = os.environ.get("DEMO_TOKEN", "")
+MAPBOX_ACCESS_TOKEN = os.environ.get("MAPBOX_ACCESS_TOKEN", "").strip()
 DEFAULT_PARTITIONS = "p0,p1,p2,p3"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -131,12 +153,15 @@ def index():
 
 @app.get("/api/config")
 def api_config():
+    # Only expose public Mapbox tokens (pk.*) for browser map tiles.
+    map_token = MAPBOX_ACCESS_TOKEN if MAPBOX_ACCESS_TOKEN.startswith("pk.") else ""
     return {
         "h3_resolution": resolution(),
         "hash_nodes": nodes_from_env(os.environ.get("HASH_NODES", DEFAULT_PARTITIONS)),
         "kafka_topic_events": os.environ.get("KAFKA_TOPIC_EVENTS", "ride-events"),
         "kafka_topic_results": os.environ.get("KAFKA_TOPIC_RESULTS", "demand-results"),
         "match_topic": os.environ.get("MATCH_TOPIC", "rideshare-match-jobs"),
+        "mapbox_token": map_token,
         "graph": {
             "rider": RIDER_URL,
             "driver": DRIVER_HTTP,
@@ -150,6 +175,48 @@ def api_config():
 def api_zones(lat: float, lng: float, k: int = 3):
     zones = cells_around(lat, lng, k)
     return {"lat": lat, "lng": lng, "k": k, "zones": zones}
+
+
+@app.get("/api/geocode")
+def api_geocode(q: str, limit: int = 5):
+    query = (q or "").strip()
+    if len(query) < 2:
+        raise HTTPException(status_code=400, detail="q too short")
+    if not MAPBOX_ACCESS_TOKEN:
+        raise HTTPException(
+            status_code=503, detail="MAPBOX_ACCESS_TOKEN not configured"
+        )
+    limit = max(1, min(int(limit), 10))
+    url = (
+        "https://api.mapbox.com/geocoding/v5/mapbox.places/"
+        f"{urllib.parse.quote(query)}.json"
+        f"?access_token={urllib.parse.quote(MAPBOX_ACCESS_TOKEN)}"
+        f"&limit={limit}&autocomplete=true"
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise HTTPException(
+            status_code=502, detail=detail or exc.reason
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise HTTPException(status_code=502, detail=str(exc.reason)) from exc
+
+    results = []
+    for feat in payload.get("features") or []:
+        center = feat.get("center") or []
+        if len(center) < 2:
+            continue
+        results.append(
+            {
+                "label": feat.get("place_name") or feat.get("text") or "",
+                "lng": center[0],
+                "lat": center[1],
+            }
+        )
+    return {"query": query, "results": results}
 
 
 @app.post("/api/riders")
