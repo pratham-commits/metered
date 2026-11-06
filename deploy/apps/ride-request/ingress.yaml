@@ -32,6 +32,11 @@ metadata:
     networking.gke.io/v1beta1.FrontendConfig: rideshare-https
 spec:
   ingressClassName: gce
+  defaultBackend:
+    service:
+      name: ride-request
+      port:
+        number: 8003
   rules:
     - http:
         paths:
