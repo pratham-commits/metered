@@ -21,7 +21,7 @@ spec:
         runAsUser: 65532
       containers:
         - name: driver
-          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/driver:de1067c
+          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/driver:6c6e678
           ports:
             - containerPort: 8002
             - containerPort: 9002
