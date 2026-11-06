@@ -110,6 +110,34 @@ class Store:
                 return found
             kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
 
+    def list_in_zones(self, partitions: list[str], zones: list[str]) -> list[dict]:
+        wanted = set(zones)
+        found = []
+        seen = set()
+        for partition_id in partitions:
+            kwargs = dict(
+                TableName=self.driver_table,
+                KeyConditionExpression="partition_id = :p",
+                ExpressionAttributeValues={":p": {"S": partition_id}},
+                ConsistentRead=True,
+            )
+            while True:
+                resp = self.ddb.query(**kwargs)
+                for raw in resp.get("Items", []):
+                    item = _driver(raw)
+                    if item["status"] not in {"AVAILABLE", "ASSIGNED"}:
+                        continue
+                    if item["zone"] not in wanted:
+                        continue
+                    if item["driver_id"] in seen:
+                        continue
+                    seen.add(item["driver_id"])
+                    found.append(item)
+                if not resp.get("LastEvaluatedKey"):
+                    break
+                kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+        return found
+
     def assign(self, partition_id: str, driver_id: str, ride_id: str) -> bool:
         try:
             self.ddb.update_item(

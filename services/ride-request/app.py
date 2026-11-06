@@ -237,6 +237,57 @@ async def api_presence(driver_id: UUID, request: Request):
     return http_json("POST", f"{DRIVER_HTTP}/drivers/{driver_id}/presence", body)
 
 
+@app.get("/api/live-drivers")
+def api_live_drivers(lat: float, lng: float, k: int = 1):
+    """Drivers currently online near this point, for the map car markers."""
+    k = max(0, min(int(k), 3))
+    zones = cells_around(lat, lng, k)
+    partitions = nodes_from_env(os.environ.get("HASH_NODES", DEFAULT_PARTITIONS))
+    live = get_store().list_in_zones(partitions, zones)
+    ids = [item["driver_id"] for item in live if item.get("driver_id")]
+    names: dict[str, str] = {}
+    if ids:
+        with connection() as conn:
+            rows = conn.execute(
+                "SELECT id::text, name FROM drivers WHERE id = ANY(%s::uuid[])",
+                (ids,),
+            ).fetchall()
+            names = {row[0]: row[1] for row in rows}
+    return {
+        "drivers": [
+            {
+                "driver_id": item.get("driver_id"),
+                "name": names.get(item.get("driver_id") or "", ""),
+                "lat": item.get("lat"),
+                "lng": item.get("lng"),
+                "status": item.get("status"),
+                "zone": item.get("zone"),
+                "partition_id": item.get("partition_id"),
+            }
+            for item in live
+            if item.get("lat") is not None and item.get("lng") is not None
+        ]
+    }
+
+
+@app.get("/api/drivers/{driver_id}/offer")
+def api_driver_offer(driver_id: UUID):
+    """Latest ride matching assigned to this driver. Empty until one exists."""
+    with connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id::text FROM ride_requests
+            WHERE assigned_driver_id = %s AND status = 'ASSIGNED'
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (str(driver_id),),
+        ).fetchone()
+        if row is None:
+            return {"ride": None}
+        return {"ride": ride_row(conn, row[0])}
+
+
 @app.post("/api/trips/{ride_id}/progress")
 async def api_trip_progress(ride_id: UUID, request: Request):
     body = await request.json()

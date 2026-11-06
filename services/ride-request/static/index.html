@@ -175,7 +175,7 @@
       text-align: left;
     }
 
-    #map {
+    .map {
       height: var(--map-h);
       width: 100%;
       border: 1px solid var(--line);
@@ -185,18 +185,57 @@
     }
 
     /* Only tint free OSM fallback; Mapbox light already matches the palette */
-    #map:not(.mapbox-tiles) .leaflet-tile-pane {
+    .map:not(.mapbox-tiles) .leaflet-tile-pane {
       filter: saturate(0.72) hue-rotate(198deg) brightness(1.04) contrast(1.04);
     }
 
-    #map .leaflet-control-attribution {
+    .map .leaflet-control-attribution {
       background: color-mix(in srgb, var(--paper) 88%, transparent) !important;
       color: var(--muted);
       font-size: 0.65rem;
       border: none;
     }
 
-    #map .leaflet-control-attribution a { color: var(--accent-deep); }
+    .map .leaflet-control-attribution a { color: var(--accent-deep); }
+
+    .car-pin { background: transparent; border: none; }
+    .car-pin svg { display: block; filter: drop-shadow(0 1px 2px rgba(11, 28, 44, 0.35)); }
+
+    .role-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.85rem;
+      margin-top: 1.6rem;
+    }
+
+    .role-card {
+      text-align: left;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      padding: 1.2rem 1.15rem 1.3rem;
+      cursor: pointer;
+      width: auto;
+    }
+
+    .role-card h2 {
+      margin: 0 0 0.35rem;
+      font-family: "Fraunces", serif;
+      font-size: 1.7rem;
+      letter-spacing: -0.03em;
+      text-transform: none;
+      color: var(--ink);
+      font-weight: 600;
+    }
+
+    .role-card p { margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.45; }
+
+    .status-line {
+      margin: 0.85rem 0 0;
+      font-size: 1.05rem;
+      color: var(--ink);
+    }
+
+    [hidden] { display: none !important; }
 
     .pin {
       background: transparent;
@@ -404,6 +443,7 @@
       .shell { width: min(1100px, calc(100% - 1.5rem)); }
       .panel-grid,
       .lab-grid,
+      .role-grid,
       .route,
       .row { grid-template-columns: 1fr; }
       .hero-actions button { width: 100%; }
@@ -417,138 +457,142 @@
     <div class="shell">
       <div class="wordmark">metered<span>.</span></div>
       <nav>
-        <a href="#ride">Ride</a>
-        <a href="#people">People</a>
-        <a href="#lab">Lab</a>
+        <a href="#" id="switch-role">Switch role</a>
       </nav>
     </div>
   </div>
 
-  <header class="hero shell">
-    <p class="eyebrow">Design that meters the trip</p>
-    <h1>metered<em>.</em></h1>
-    <p>One public origin for request, match, and proof. Search a place, watch H3 zones light up, and keep the fare in ₹.</p>
-    <div class="hero-actions">
-      <button type="button" onclick="document.getElementById('ride').scrollIntoView({behavior:'smooth'})">Request a ride</button>
-      <button type="button" class="secondary" onclick="document.getElementById('lab').scrollIntoView({behavior:'smooth'})">Open the lab</button>
+  <header class="hero shell" id="gate">
+    <p class="eyebrow">Two tabs, one trip</p>
+    <h1>Who are <em>you</em>?</h1>
+    <p>Open this page twice. One tab is the rider. The other is the driver. The driver must go online before the rider requests.</p>
+    <div class="role-grid">
+      <button type="button" class="role-card" id="choose-rider">
+        <h2>Rider</h2>
+        <p>Set pickup and drop, then request a ride. Cars nearby show on the map.</p>
+      </button>
+      <button type="button" class="role-card secondary" id="choose-driver">
+        <h2>Driver</h2>
+        <p>Go online. Your car appears on the map, and the ride shows up here.</p>
+      </button>
     </div>
   </header>
 
-  <main class="shell">
-    <section class="stage" id="ride">
+  <main class="shell" id="rider-app" hidden>
+    <section class="stage">
       <div class="stage-head">
-        <h2>Map the route</h2>
-        <p>Search a place, drag pickup, click for drop. The map sits in the same blue field as the rest of metered.</p>
+        <h2>Request a ride</h2>
+        <p>Search pickup and drop. Online drivers appear as cars. Matching runs once, so the driver tab must already be online.</p>
       </div>
-      <div id="map"></div>
-
-      <div class="panel wide" style="border-top: none; margin-top: 0;">
-        <h2>Places</h2>
-        <div class="route">
+      <div id="rider-map" class="map"></div>
+      <div class="panel wide">
+        <h2>Rider</h2>
+        <div class="row">
           <div>
-            <label>Pickup place</label>
-            <div class="search-wrap">
-              <input id="pickup-q" placeholder="e.g. Connaught Place, Delhi" autocomplete="off" />
-              <ul id="pickup-suggest" class="suggest" hidden></ul>
-            </div>
-            <label>Pickup lat</label><input id="pickup-lat" />
-            <label>Pickup lng</label><input id="pickup-lng" />
-            <p class="meta">Pickup H3: <strong id="pickup-zone">—</strong></p>
+            <label>Name</label>
+            <input id="rider-name" value="Ada" />
           </div>
           <div>
-            <label>Drop place</label>
-            <div class="search-wrap">
-              <input id="drop-q" placeholder="e.g. India Gate, Delhi" autocomplete="off" />
-              <ul id="drop-suggest" class="suggest" hidden></ul>
-            </div>
-            <label>Drop lat</label><input id="drop-lat" />
-            <label>Drop lng</label><input id="drop-lng" />
-            <p class="meta">Drop H3: <strong id="drop-zone">—</strong></p>
+            <label>Phone</label>
+            <input id="rider-phone" value="+919800000001" />
           </div>
         </div>
-        <button id="btn-ride">Create ride request</button>
-        <p class="meta">Ride id: <strong id="ride-id">—</strong> · Est. fare: <strong id="est-fare">—</strong></p>
+        <div class="route">
+          <div>
+            <label>Pickup</label>
+            <div class="search-wrap">
+              <input id="pickup-q" placeholder="Search a pickup place" autocomplete="off" />
+              <ul id="pickup-suggest" class="suggest" hidden></ul>
+            </div>
+          </div>
+          <div>
+            <label>Drop</label>
+            <div class="search-wrap">
+              <input id="drop-q" placeholder="Search a drop place" autocomplete="off" />
+              <ul id="drop-suggest" class="suggest" hidden></ul>
+            </div>
+          </div>
+        </div>
+        <button type="button" id="btn-ride">Request ride</button>
+        <p class="status-line" id="rider-status">Set a pickup and a drop.</p>
+        <p class="meta">Ride: <strong id="ride-id">—</strong> · Fare: <strong id="est-fare">—</strong></p>
+      </div>
+    </section>
+  </main>
+
+  <main class="shell" id="driver-app" hidden>
+    <section class="stage">
+      <div class="stage-head">
+        <h2>Drive</h2>
+        <p>Go online near the rider. Your car is drawn on this map and on the rider's map. A request appears here after matching assigns it.</p>
+      </div>
+      <div id="driver-map" class="map"></div>
+      <div class="panel wide">
+        <h2>Driver</h2>
         <div class="row">
-          <button id="btn-trace" class="secondary">Refresh trace</button>
-          <button id="btn-conflict" class="warn">Conflict demo</button>
+          <div>
+            <label>Name</label>
+            <input id="driver-name" value="Bob" />
+          </div>
+          <div>
+            <label>Phone</label>
+            <input id="driver-phone" value="+919800000002" />
+          </div>
+        </div>
+        <label>Where you are</label>
+        <div class="search-wrap">
+          <input id="driver-q" placeholder="Search the same area as the rider" autocomplete="off" />
+          <ul id="driver-suggest" class="suggest" hidden></ul>
+        </div>
+        <button type="button" id="btn-online">Go online</button>
+        <p class="status-line" id="driver-status">You are offline.</p>
+        <p class="meta">Driver: <strong id="driver-id">—</strong></p>
+        <div id="offer" hidden>
+          <h2>Ride request</h2>
+          <p class="meta" id="offer-text"></p>
         </div>
       </div>
     </section>
-
-    <div class="panel-grid" id="people">
-      <section class="panel">
-        <h2>Rider</h2>
-        <label>Name</label><input id="rider-name" value="Ada" />
-        <label>Phone</label><input id="rider-phone" value="+919800000001" />
-        <button id="btn-rider">Register rider</button>
-        <p class="meta">Rider id: <strong id="rider-id">—</strong></p>
-      </section>
-
-      <section class="panel">
-        <h2>Driver</h2>
-        <label>Name</label><input id="driver-name" value="Bob" />
-        <label>Phone</label><input id="driver-phone" value="+919800000002" />
-        <button id="btn-driver">Register driver</button>
-        <button id="btn-online" class="secondary">Go online here</button>
-        <p class="meta">Driver id: <strong id="driver-id">—</strong></p>
-        <p class="meta">Zone / partition: <strong id="driver-zone">—</strong></p>
-      </section>
-    </div>
-
-    <div class="lab-grid" id="lab">
-      <section class="panel">
-        <h2>Trace</h2>
-        <pre id="trace">No ride yet.</pre>
-      </section>
-
-      <section class="panel">
-        <h2>Ring</h2>
-        <button id="btn-ring" class="secondary">Sample live cells (k=3)</button>
-        <button id="btn-ring-preview">Preview add p4</button>
-        <pre id="ring-out">—</pre>
-      </section>
-
-      <section class="panel">
-        <h2>Demand</h2>
-        <button id="btn-demand" class="secondary">Load demand</button>
-        <pre id="demand-out">—</pre>
-      </section>
-
-      <section class="panel wide">
-        <h2>Checklist</h2>
-        <button id="btn-checklist" class="secondary">Refresh checklist</button>
-        <pre id="checklist-out">—</pre>
-      </section>
-    </div>
   </main>
 
   <footer class="foot shell">
     <span>metered.</span>
-    <div>H3 · hashring · hops · ₹ paise/100</div>
+    <div>Open a second tab and pick the other role.</div>
   </footer>
 
   <script>
-    const state = {
-      riderId: null,
-      driverId: null,
-      partitionId: null,
-      rideId: null,
-      pickup: null,
-      drop: null,
-      map: null,
-      pickupMarker: null,
-      dropMarker: null,
-      demoToken: new URLSearchParams(location.search).get("demo") || "",
+    const session = {
+      role: sessionStorage.getItem("metered-role") || "",
+      riderId: sessionStorage.getItem("metered-rider") || "",
+      driverId: sessionStorage.getItem("metered-driver") || "",
+      rideId: sessionStorage.getItem("metered-ride") || "",
     };
+
+    const maps = { rider: null, driver: null };
+    const markers = { pickup: null, drop: null, cars: new Map(), self: null, offerPickup: null, offerDrop: null };
+    const points = { pickup: null, drop: null, driver: null };
+    const timers = [];
+    let online = false;
 
     const $ = (id) => document.getElementById(id);
 
-    const pinIcon = (kind) => L.divIcon({
-      className: `pin pin-${kind}`,
-      html: "<span></span>",
-      iconSize: [16, 16],
-      iconAnchor: [8, 8],
-    });
+    function pinIcon(kind) {
+      return L.divIcon({
+        className: `pin pin-${kind}`,
+        html: "<span></span>",
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      });
+    }
+
+    function carIcon() {
+      return L.divIcon({
+        className: "car-pin",
+        html: '<svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect x="4" y="10" width="20" height="8" rx="2" fill="#0f4fa8"/><rect x="7" y="7" width="10" height="5" rx="1.5" fill="#1d6fd8"/><circle cx="9" cy="19" r="2.2" fill="#0b1c2c"/><circle cx="19" cy="19" r="2.2" fill="#0b1c2c"/></svg>',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      });
+    }
 
     async function api(path, opts = {}) {
       const headers = Object.assign({}, opts.headers || {});
@@ -560,7 +604,10 @@
       const text = await res.text();
       let data;
       try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
-      if (!res.ok) throw new Error(data.detail || text || res.statusText);
+      if (!res.ok) {
+        const detail = typeof data.detail === "string" ? data.detail : (text || res.statusText);
+        throw new Error(detail);
+      }
       return data;
     }
 
@@ -569,53 +616,82 @@
       return "₹" + (Number(cents) / 100).toFixed(2);
     }
 
-    function ensureMap(lat, lng) {
-      if (state.map) {
-        state.map.setView([lat, lng], Math.max(state.map.getZoom(), 14));
+    function every(ms, fn) {
+      const id = setInterval(() => { fn().catch((e) => console.warn(e)); }, ms);
+      timers.push(id);
+      return id;
+    }
+
+    function clearTimers() {
+      while (timers.length) clearInterval(timers.pop());
+    }
+
+    async function addBasemap(map, el) {
+      let token = "";
+      try {
+        const cfg = await api("/api/config");
+        token = (cfg.mapbox_token || "").trim();
+      } catch (_) {}
+      if (token) {
+        L.tileLayer(
+          `https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/256/{z}/{x}/{y}@2x?access_token=${encodeURIComponent(token)}`,
+          { attribution: "&copy; Mapbox &copy; OSM", tileSize: 256, maxZoom: 22 }
+        ).addTo(map);
+        el.classList.add("mapbox-tiles");
         return;
       }
-      initMap(lat, lng);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap",
+        maxZoom: 19,
+      }).addTo(map);
     }
 
-    function setPickup(lat, lng) {
-      state.pickup = { lat, lng };
-      $("pickup-lat").value = lat.toFixed(6);
-      $("pickup-lng").value = lng.toFixed(6);
-      if (!state.map) return;
-      if (state.pickupMarker) state.pickupMarker.setLatLng([lat, lng]);
-      else state.pickupMarker = L.marker([lat, lng], {
-        draggable: true,
-        icon: pinIcon("pickup"),
-      }).addTo(state.map)
-        .on("dragend", (e) => {
-          const p = e.target.getLatLng();
-          setPickup(p.lat, p.lng);
-          refreshZones();
-        });
-      refreshZones();
+    async function ensureMap(which, lat, lng) {
+      if (maps[which]) {
+        maps[which].invalidateSize();
+        return maps[which];
+      }
+      const el = $(which + "-map");
+      const map = L.map(el, { zoomControl: true, attributionControl: true }).setView([lat, lng], 14);
+      await addBasemap(map, el);
+      maps[which] = map;
+      setTimeout(() => map.invalidateSize(), 80);
+      return map;
     }
 
-    function setDrop(lat, lng) {
-      state.drop = { lat, lng };
-      $("drop-lat").value = lat.toFixed(6);
-      $("drop-lng").value = lng.toFixed(6);
-      if (!state.map) return;
-      if (state.dropMarker) state.dropMarker.setLatLng([lat, lng]);
-      else state.dropMarker = L.marker([lat, lng], {
-        title: "drop",
-        icon: pinIcon("drop"),
-      }).addTo(state.map);
-      refreshZones();
+    function placeMarker(map, key, lat, lng, icon) {
+      if (markers[key]) {
+        markers[key].setLatLng([lat, lng]);
+        return markers[key];
+      }
+      markers[key] = L.marker([lat, lng], { icon }).addTo(map);
+      return markers[key];
     }
 
-    function wirePlaceSearch(inputId, listId, apply) {
+    function drawCars(map, drivers, skipId) {
+      const seen = new Set();
+      (drivers || []).forEach((d) => {
+        if (!d.driver_id || d.driver_id === skipId) return;
+        if (d.lat == null || d.lng == null) return;
+        seen.add(d.driver_id);
+        const existing = markers.cars.get(d.driver_id);
+        if (existing) existing.setLatLng([d.lat, d.lng]);
+        else markers.cars.set(d.driver_id, L.marker([d.lat, d.lng], { icon: carIcon(), title: d.name || "Driver" }).addTo(map));
+      });
+      for (const [id, marker] of markers.cars) {
+        if (!seen.has(id)) {
+          marker.remove();
+          markers.cars.delete(id);
+        }
+      }
+    }
+
+    function wireSearch(inputId, listId, onPick) {
       const input = $(inputId);
       const list = $(listId);
       let timer = null;
       let req = 0;
-
       const hide = () => { list.hidden = true; list.innerHTML = ""; };
-
       input.addEventListener("input", () => {
         const q = input.value.trim();
         clearTimeout(timer);
@@ -629,251 +705,243 @@
             (data.results || []).forEach((r) => {
               const li = document.createElement("li");
               li.textContent = r.label;
-              li.onclick = () => {
-                input.value = r.label;
-                hide();
-                apply(r.lat, r.lng);
-              };
+              li.onclick = () => { input.value = r.label; hide(); onPick(r.lat, r.lng); };
               list.appendChild(li);
             });
             list.hidden = !(data.results && data.results.length);
           } catch (e) {
             hide();
-            console.warn("geocode", e.message || e);
           }
         }, 280);
-      });
-
-      input.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") hide();
       });
       document.addEventListener("click", (e) => {
         if (!list.contains(e.target) && e.target !== input) hide();
       });
     }
 
-    wirePlaceSearch("pickup-q", "pickup-suggest", (lat, lng) => {
-      ensureMap(lat, lng);
-      setPickup(lat, lng);
-      if (state.map) state.map.setView([lat, lng], 14);
-    });
-    wirePlaceSearch("drop-q", "drop-suggest", (lat, lng) => {
-      ensureMap(lat, lng);
-      setDrop(lat, lng);
-      if (state.map) state.map.panTo([lat, lng]);
-    });
-
-    async function refreshZones() {
-      if (!state.pickup) return;
-      try {
-        const z = await api(`/api/zones?lat=${state.pickup.lat}&lng=${state.pickup.lng}&k=0`);
-        $("pickup-zone").textContent = (z.zones && z.zones[0]) || "—";
-      } catch (_) {}
-      if (!state.drop) return;
-      try {
-        const z = await api(`/api/zones?lat=${state.drop.lat}&lng=${state.drop.lng}&k=0`);
-        $("drop-zone").textContent = (z.zones && z.zones[0]) || "—";
-      } catch (_) {}
+    async function refreshCars() {
+      if (!points.pickup || !maps.rider) return;
+      const data = await api(`/api/live-drivers?lat=${points.pickup.lat}&lng=${points.pickup.lng}&k=1`);
+      drawCars(maps.rider, data.drivers, "");
+      const n = (data.drivers || []).length;
+      if (!session.rideId) {
+        $("rider-status").textContent = n
+          ? `${n} car${n === 1 ? "" : "s"} nearby. Request when the driver is online.`
+          : "No cars nearby yet. In the other tab, choose Driver and go online.";
+      }
     }
 
-    async function addBasemap(map) {
-      let token = "";
-      try {
-        const cfg = await api("/api/config");
-        token = (cfg.mapbox_token || "").trim();
-      } catch (_) {}
+    async function refreshRide() {
+      if (!session.rideId) return;
+      const data = await api(`/api/ride-requests/${session.rideId}`);
+      const ride = data.ride || {};
+      $("ride-id").textContent = ride.id || session.rideId;
+      $("est-fare").textContent = rupees(ride.estimated_fare_cents);
+      if (ride.status === "ASSIGNED") {
+        $("rider-status").textContent = "Driver assigned. Their car stays on the map.";
+      } else if (ride.status === "NO_DRIVER") {
+        $("rider-status").textContent = "No driver was online. Go online in the driver tab, then request again.";
+      } else {
+        $("rider-status").textContent = "Searching for a driver…";
+      }
+    }
 
-      if (token) {
-        // Mapbox light style — soft blue-gray, no Carto API key
-        L.tileLayer(
-          `https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/256/{z}/{x}/{y}@2x?access_token=${encodeURIComponent(token)}`,
-          {
-            attribution: '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-            tileSize: 256,
-            maxZoom: 22,
-          }
-        ).addTo(map);
-        document.getElementById("map").classList.add("mapbox-tiles");
+    async function startRider() {
+      const loc = points.pickup || await locate();
+      if (!loc) {
+        $("rider-status").textContent = "Allow location, or search a pickup and a drop.";
+        every(4000, refreshCars);
+        every(2000, refreshRide);
         return;
       }
-
-      // Fallback: OSM + blue tint (no key)
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 19,
-      }).addTo(map);
+      const map = await ensureMap("rider", loc.lat, loc.lng);
+      points.pickup = points.pickup || loc;
+      if (!points.drop) points.drop = { lat: loc.lat + 0.01, lng: loc.lng + 0.01 };
+      placeMarker(map, "pickup", points.pickup.lat, points.pickup.lng, pinIcon("pickup"));
+      placeMarker(map, "drop", points.drop.lat, points.drop.lng, pinIcon("drop"));
+      map.setView([points.pickup.lat, points.pickup.lng], 14);
+      if (session.rideId) $("ride-id").textContent = session.rideId;
+      await refreshCars().catch(() => {});
+      if (session.rideId) await refreshRide().catch(() => {});
+      every(4000, refreshCars);
+      every(2000, refreshRide);
     }
 
-    async function initMap(lat, lng) {
-      state.map = L.map("map", {
-        zoomControl: true,
-        attributionControl: true,
-      }).setView([lat, lng], 14);
-
-      await addBasemap(state.map);
-
-      setPickup(lat, lng);
-      setDrop(lat + 0.01, lng + 0.01);
-      state.map.on("click", (e) => setDrop(e.latlng.lat, e.latlng.lng));
-      setTimeout(() => state.map.invalidateSize(), 80);
-    }
-
-    function useManualFallback() {
-      $("pickup-lat").placeholder = "required";
-      $("pickup-lng").placeholder = "required";
-      $("drop-lat").placeholder = "required";
-      $("drop-lng").placeholder = "required";
-      const apply = () => {
-        const plat = Number($("pickup-lat").value);
-        const plng = Number($("pickup-lng").value);
-        const dlat = Number($("drop-lat").value);
-        const dlng = Number($("drop-lng").value);
-        if (![plat, plng, dlat, dlng].every(Number.isFinite)) return;
-        if (!state.map) initMap(plat, plng);
-        else {
-          setPickup(plat, plng);
-          setDrop(dlat, dlng);
-          state.map.setView([plat, plng], 14);
-        }
-      };
-      ["pickup-lat", "pickup-lng", "drop-lat", "drop-lng"].forEach((id) => {
-        $(id).addEventListener("change", apply);
-      });
-      alert("Location permission denied. Search a place or enter lat/lng (no default city).");
-    }
-
-    $("btn-rider").onclick = async () => {
-      const data = await api("/api/riders", {
+    async function publishPresence() {
+      if (!session.driverId || !points.driver) return;
+      await api(`/api/drivers/${session.driverId}/presence`, {
         method: "POST",
-        body: { name: $("rider-name").value, phone: $("rider-phone").value },
+        body: { status: "ONLINE", lat: points.driver.lat, lng: points.driver.lng },
       });
-      state.riderId = data.id;
-      $("rider-id").textContent = data.id;
+    }
+
+    async function refreshOffer() {
+      if (!session.driverId) return;
+      const data = await api(`/api/drivers/${session.driverId}/offer`);
+      const ride = data.ride;
+      const box = $("offer");
+      if (!ride) {
+        box.hidden = true;
+        if (online) $("driver-status").textContent = "Online. Waiting for a rider nearby.";
+        return;
+      }
+      box.hidden = false;
+      $("driver-status").textContent = "You have a ride.";
+      $("offer-text").textContent =
+        `Pickup ${Number(ride.pickup_lat).toFixed(5)}, ${Number(ride.pickup_lng).toFixed(5)}` +
+        ` → drop ${Number(ride.drop_lat).toFixed(5)}, ${Number(ride.drop_lng).toFixed(5)}` +
+        ` · ${rupees(ride.estimated_fare_cents)}`;
+      if (maps.driver) {
+        placeMarker(maps.driver, "offerPickup", ride.pickup_lat, ride.pickup_lng, pinIcon("pickup"));
+        placeMarker(maps.driver, "offerDrop", ride.drop_lat, ride.drop_lng, pinIcon("drop"));
+        maps.driver.fitBounds([
+          [ride.pickup_lat, ride.pickup_lng],
+          [ride.drop_lat, ride.drop_lng],
+          [points.driver.lat, points.driver.lng],
+        ], { padding: [30, 30] });
+      }
+    }
+
+    function showDriverCar(lat, lng) {
+      points.driver = { lat, lng };
+      return ensureMap("driver", lat, lng).then((map) => {
+        if (markers.self) markers.self.remove();
+        markers.self = L.marker([lat, lng], { icon: carIcon(), draggable: true, title: "You" }).addTo(map);
+        markers.self.on("dragend", () => {
+          const p = markers.self.getLatLng();
+          points.driver = { lat: p.lat, lng: p.lng };
+          if (online) publishPresence().catch((e) => { $("driver-status").textContent = e.message; });
+        });
+        map.setView([lat, lng], 14);
+      });
+    }
+
+    async function startDriver() {
+      if (session.driverId) $("driver-id").textContent = session.driverId;
+      const loc = points.driver || await locate();
+      if (!loc) {
+        $("driver-status").textContent = "Allow location, or search where you are, then go online.";
+        return;
+      }
+      await showDriverCar(loc.lat, loc.lng);
+      if (online) {
+        await publishPresence().catch((e) => { $("driver-status").textContent = e.message; });
+        every(15000, publishPresence);
+        every(2000, refreshOffer);
+        await refreshOffer().catch(() => {});
+      }
+    }
+
+    function locate() {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+          resolve(null);
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      });
+    }
+
+    function show(role) {
+      clearTimers();
+      session.role = role || "";
+      if (role) sessionStorage.setItem("metered-role", role);
+      else sessionStorage.removeItem("metered-role");
+      $("gate").hidden = Boolean(role);
+      $("rider-app").hidden = role !== "rider";
+      $("driver-app").hidden = role !== "driver";
+      $("switch-role").hidden = !role;
+      if (role === "rider") startRider().catch((e) => { $("rider-status").textContent = e.message; });
+      if (role === "driver") startDriver().catch((e) => { $("driver-status").textContent = e.message; });
+    }
+
+    $("choose-rider").onclick = () => show("rider");
+    $("choose-driver").onclick = () => show("driver");
+    $("switch-role").onclick = (e) => {
+      e.preventDefault();
+      online = false;
+      show("");
     };
 
-    $("btn-driver").onclick = async () => {
-      const data = await api("/api/drivers", {
-        method: "POST",
-        body: { name: $("driver-name").value, phone: $("driver-phone").value },
-      });
-      state.driverId = data.id;
-      $("driver-id").textContent = data.id;
+    wireSearch("pickup-q", "pickup-suggest", async (lat, lng) => {
+      points.pickup = { lat, lng };
+      const map = await ensureMap("rider", lat, lng);
+      placeMarker(map, "pickup", lat, lng, pinIcon("pickup"));
+      map.setView([lat, lng], 14);
+      refreshCars().catch(() => {});
+    });
+    wireSearch("drop-q", "drop-suggest", async (lat, lng) => {
+      points.drop = { lat, lng };
+      const map = await ensureMap("rider", lat, lng);
+      placeMarker(map, "drop", lat, lng, pinIcon("drop"));
+    });
+    wireSearch("driver-q", "driver-suggest", async (lat, lng) => {
+      await showDriverCar(lat, lng);
+      if (online) await publishPresence();
+    });
+
+    $("btn-ride").onclick = async () => {
+      try {
+        if (!points.pickup || !points.drop) throw new Error("Set a pickup and a drop first.");
+        if (!session.riderId) {
+          const rider = await api("/api/riders", {
+            method: "POST",
+            body: { name: $("rider-name").value, phone: $("rider-phone").value },
+          });
+          session.riderId = rider.id;
+          sessionStorage.setItem("metered-rider", rider.id);
+        }
+        const ride = await api("/api/ride-requests", {
+          method: "POST",
+          body: {
+            rider_id: session.riderId,
+            pickup_lat: points.pickup.lat,
+            pickup_lng: points.pickup.lng,
+            drop_lat: points.drop.lat,
+            drop_lng: points.drop.lng,
+            idempotency_key: crypto.randomUUID(),
+          },
+        });
+        session.rideId = ride.id;
+        sessionStorage.setItem("metered-ride", ride.id);
+        $("ride-id").textContent = ride.id;
+        $("est-fare").textContent = rupees(ride.estimated_fare_cents);
+        $("rider-status").textContent = "Searching for a driver…";
+        setTimeout(() => refreshRide().catch(() => {}), 1500);
+      } catch (e) {
+        $("rider-status").textContent = e.message;
+      }
     };
 
     $("btn-online").onclick = async () => {
-      if (!state.driverId) throw new Error("register a driver first");
-      if (!state.pickup) throw new Error("need a location");
-      const data = await api(`/api/drivers/${state.driverId}/presence`, {
-        method: "POST",
-        body: {
-          status: "ONLINE",
-          lat: state.pickup.lat,
-          lng: state.pickup.lng,
-        },
-      });
-      state.partitionId = data.partition_id;
-      $("driver-zone").textContent = `${data.zone} / ${data.partition_id}`;
-    };
-
-    $("btn-ride").onclick = async () => {
-      if (!state.riderId) throw new Error("register a rider first");
-      if (!state.pickup || !state.drop) throw new Error("set pickup and drop");
-      const data = await api("/api/ride-requests", {
-        method: "POST",
-        body: {
-          rider_id: state.riderId,
-          pickup_lat: state.pickup.lat,
-          pickup_lng: state.pickup.lng,
-          drop_lat: state.drop.lat,
-          drop_lng: state.drop.lng,
-          idempotency_key: crypto.randomUUID(),
-        },
-      });
-      state.rideId = data.id;
-      $("ride-id").textContent = data.id;
-      $("est-fare").textContent = rupees(data.estimated_fare_cents);
-      setTimeout(() => $("btn-trace").click(), 1500);
-    };
-
-    $("btn-trace").onclick = async () => {
-      if (!state.rideId) return;
-      const data = await api(`/api/ride-requests/${state.rideId}`);
-      $("trace").textContent = JSON.stringify(data, null, 2);
-      if (data.ride && data.ride.assigned_driver_id) {
-        state.driverId = state.driverId || data.ride.assigned_driver_id;
-        state.partitionId = data.ride.assigned_partition_id || state.partitionId;
-      }
-    };
-
-    $("btn-conflict").onclick = async () => {
-      if (!state.rideId || !state.driverId || !state.partitionId) {
-        throw new Error("need an assigned ride (driver id + partition)");
-      }
-      const data = await api("/api/demo/conflict", {
-        method: "POST",
-        headers: { "X-Demo-Token": state.demoToken },
-        body: {
-          ride_id: state.rideId,
-          driver_id: state.driverId,
-          partition_id: state.partitionId,
-        },
-      });
-      $("trace").textContent = "conflict => " + JSON.stringify(data, null, 2);
-      $("btn-trace").click();
-    };
-
-    $("btn-ring").onclick = async () => {
-      if (!state.pickup) throw new Error("need location");
-      const data = await api(
-        `/api/ring?lat=${state.pickup.lat}&lng=${state.pickup.lng}&k=3`
-      );
-      $("ring-out").textContent = JSON.stringify(data, null, 2);
-      state._ringZones = data.zones;
-    };
-
-    $("btn-ring-preview").onclick = async () => {
-      const zones = state._ringZones || (await api(
-        `/api/ring?lat=${state.pickup.lat}&lng=${state.pickup.lng}&k=3`
-      )).zones;
-      const data = await api("/api/ring/preview", {
-        method: "POST",
-        body: { nodes: ["p0", "p1", "p2", "p3", "p4"], zones },
-      });
-      $("ring-out").textContent = JSON.stringify(data, null, 2);
-    };
-
-    $("btn-demand").onclick = async () => {
       try {
-        const data = await api("/api/demand");
-        $("demand-out").textContent = JSON.stringify(data, null, 2);
+        if (!points.driver) throw new Error("Waiting for your location.");
+        if (!session.driverId) {
+          const driver = await api("/api/drivers", {
+            method: "POST",
+            body: { name: $("driver-name").value, phone: $("driver-phone").value },
+          });
+          session.driverId = driver.id;
+          sessionStorage.setItem("metered-driver", driver.id);
+          $("driver-id").textContent = driver.id;
+        }
+        online = true;
+        await publishPresence();
+        $("driver-status").textContent = "Online. Your car is on the map.";
+        $("btn-online").textContent = "You are online";
+        every(15000, publishPresence);
+        every(2000, refreshOffer);
+        refreshOffer().catch(() => {});
       } catch (e) {
-        $("demand-out").textContent = String(e.message || e);
+        $("driver-status").textContent = e.message;
       }
     };
 
-    $("btn-checklist").onclick = async () => {
-      const data = await api("/api/checklist");
-      $("checklist-out").textContent = JSON.stringify(data, null, 2);
-    };
-
-    document.querySelectorAll("button[id]").forEach((btn) => {
-      const fn = btn.onclick;
-      if (!fn) return;
-      btn.onclick = async (ev) => {
-        try { await fn(ev); }
-        catch (e) { alert(e.message || e); }
-      };
-    });
-
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => initMap(pos.coords.latitude, pos.coords.longitude),
-        () => useManualFallback(),
-        { enableHighAccuracy: true, timeout: 8000 }
-      );
-    } else {
-      useManualFallback();
-    }
+    show(session.role);
   </script>
 </body>
 </html>

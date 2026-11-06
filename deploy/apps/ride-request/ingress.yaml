@@ -1,5 +1,7 @@
-# Point spec.domains at the DNS name for the reserved global IP rideshare-ip
-# before the public demo. Browser geolocation needs this certificate Active.
+# rideshare-ip is 136.81.121.175. nip.io resolves that name to the same address,
+# which is what the Google managed certificate checks. HTTPS stays off until
+# the certificate is Active; http://136.81.121.175 works in the meantime.
+# Browser geolocation needs the HTTPS name.
 apiVersion: networking.gke.io/v1
 kind: ManagedCertificate
 metadata:
@@ -7,7 +9,7 @@ metadata:
   namespace: rideshare
 spec:
   domains:
-    - replace-me.example.com
+    - 136.81.121.175.nip.io
 ---
 apiVersion: networking.gke.io/v1beta1
 kind: FrontendConfig
@@ -16,7 +18,7 @@ metadata:
   namespace: rideshare
 spec:
   redirectToHttps:
-    enabled: true
+    enabled: false
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

@@ -90,6 +90,28 @@ class Store:
                 found.append(item)
         return found
 
+    def list_in_zones(self, partitions: list[str], zones: list[str]) -> list[dict]:
+        """Online drivers (available or already assigned) inside these H3 cells."""
+        wanted = set(zones)
+        found = []
+        seen = set()
+        for partition_id in partitions:
+            query = self.client.collection(self.driver_collection).where(
+                "partition_id", "==", partition_id
+            )
+            for doc in query.stream():
+                item = self._driver(doc.to_dict() or {})
+                if item.get("status") not in {"AVAILABLE", "ASSIGNED"}:
+                    continue
+                if item.get("zone") not in wanted:
+                    continue
+                key = item.get("driver_id")
+                if key in seen:
+                    continue
+                seen.add(key)
+                found.append(item)
+        return found
+
     def assign(self, partition_id: str, driver_id: str, ride_id: str) -> bool:
         ref = self._driver_ref(partition_id, driver_id)
 
