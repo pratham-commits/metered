@@ -11,7 +11,7 @@ spec:
     path: deploy/apps
     directory:
       recurse: true
-      include: "{migrate/job.yaml,rider/deployment.yaml,driver/deployment.yaml}"
+      include: "{migrate/job.yaml,rider/deployment.yaml,driver/deployment.yaml,ride-request/deployment.yaml,ride-request/hpa.yaml,ride-request/ingress.yaml,matching/deployment.yaml,matching/hpa.yaml,dispatch/deployment.yaml}"
   destination:
     server: https://kubernetes.default.svc
     namespace: rideshare
