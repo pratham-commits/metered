@@ -140,7 +140,12 @@ def presence(driver_id: UUID, body: PresenceIn):
                 }, configured_partitions()
             )
         except ValueError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            if body.status == "ONLINE" and store.update_location(
+                driver_id, body.lat, body.lng, zone, configured_partitions()
+            ):
+                status = "ASSIGNED"
+            else:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
     published = store.publish(
         {
             "event_id": str(uuid.uuid4()),

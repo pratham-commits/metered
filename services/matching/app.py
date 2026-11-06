@@ -99,91 +99,24 @@ def handle_job(job: dict) -> None:
             },
         )
 
-    assigned = False
-    assigned_driver_id = ""
-    assigned_partition_id = ""
-    assign_reason = "driver_not_available"
-
-    disp, disp_channel = dispatch_stub()
-    try:
-        for candidate in merged:
-            response = disp.Assign(
-                dispatch_pb2.AssignRequest(
-                    ride_id=ride_id,
-                    driver_id=candidate.driver_id,
-                    partition_id=candidate.partition_id,
-                ),
-                timeout=10,
-            )
-            assign_reason = response.reason or (
-                "assigned" if response.assigned else "driver_not_available"
-            )
-            with connection() as conn:
-                record_hop(
-                    conn,
-                    ride_id,
-                    "matching",
-                    "GRPC",
-                    "NOSQL",
-                    {
-                        "rpc": "Assign",
-                        "driver_id": candidate.driver_id,
-                        "partition_id": candidate.partition_id,
-                        "assigned": bool(response.assigned),
-                        "reason": assign_reason,
-                    },
-                )
-            if response.assigned:
-                assigned = True
-                assigned_driver_id = candidate.driver_id
-                assigned_partition_id = candidate.partition_id
-                break
-    finally:
-        disp_channel.close()
-
-    rider_id = str(job.get("rider_id") or "")
+    # Nearby drivers are offered the ride. Assign happens when one of them accepts.
+    status = "REQUESTED" if merged else "NO_DRIVER"
     with connection() as conn:
-        if not rider_id:
-            row = conn.execute(
-                "SELECT rider_id::text FROM ride_requests WHERE id = %s",
-                (ride_id,),
-            ).fetchone()
-            rider_id = row[0] if row else ""
-
-        if assigned:
-            conn.execute(
-                """
-                UPDATE ride_requests
-                SET status = 'ASSIGNED',
-                    assigned_driver_id = %s,
-                    assigned_partition_id = %s,
-                    updated_at = now()
-                WHERE id = %s
-                """,
-                (assigned_driver_id, assigned_partition_id, ride_id),
-            )
-        else:
-            conn.execute(
-                """
-                UPDATE ride_requests
-                SET status = 'NO_DRIVER', updated_at = now()
-                WHERE id = %s
-                """,
-                (ride_id,),
-            )
-
-    if assigned:
-        get_store().publish(
-            {
-                "event_id": str(uuid.uuid4()),
-                "event_type": "RIDE_ASSIGNED",
-                "event_time": utc_now(),
-                "zone": pickup_zone,
-                "ride_id": ride_id,
-                "rider_id": rider_id,
-                "driver_id": assigned_driver_id,
-                "payload": {"partition_id": assigned_partition_id},
-            }
+        record_hop(
+            conn,
+            ride_id,
+            "matching",
+            "EVENT",
+            "SQL",
+            {"action": "offer", "candidate_count": len(merged), "status": status},
+        )
+        conn.execute(
+            """
+            UPDATE ride_requests
+            SET status = %s, updated_at = now()
+            WHERE id = %s AND status = 'REQUESTED'
+            """,
+            (status, ride_id),
         )
 
 

@@ -514,6 +514,8 @@
           </div>
         </div>
         <button type="button" id="btn-ride">Request ride</button>
+        <button type="button" id="btn-board" hidden>I'm in the car</button>
+        <button type="button" id="btn-finish" hidden>I've reached</button>
         <p class="status-line" id="rider-status">Set a pickup and a drop.</p>
         <p class="meta">Ride: <strong id="ride-id">—</strong> · Fare: <strong id="est-fare">—</strong></p>
       </div>
@@ -542,6 +544,12 @@
         <button type="button" id="btn-online">Go online</button>
         <p class="status-line" id="driver-status">You are offline.</p>
         <p class="meta">Driver: <strong id="driver-id">—</strong></p>
+        <div id="ask" hidden>
+          <h2>New trip</h2>
+          <p class="meta" id="ask-text"></p>
+          <button type="button" id="btn-accept">Accept trip</button>
+          <button type="button" id="btn-decline" class="secondary">Not now</button>
+        </div>
         <div id="offer" hidden>
           <h2>Ride request</h2>
           <p class="meta" id="offer-text"></p>
@@ -567,7 +575,11 @@
     const markers = { pickup: null, drop: null, cars: new Map(), self: null, offerPickup: null, offerDrop: null };
     const points = { pickup: null, drop: null, driver: null };
     const timers = [];
+    const routes = { rider: null, driver: null };
+    let mapToken = "";
     let online = false;
+    let pendingRide = null;
+    const declined = new Set();
     let watchId = null;
 
     const $ = (id) => document.getElementById(id);
@@ -601,8 +613,9 @@
       let data;
       try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
       if (!res.ok) {
-        const detail = typeof data.detail === "string" ? data.detail : (text || res.statusText);
-        throw new Error(detail);
+        let detail = data.detail;
+        if (detail && typeof detail !== "string") detail = detail.detail || JSON.stringify(detail);
+        throw new Error(detail || text || res.statusText);
       }
       return data;
     }
@@ -627,6 +640,7 @@
       try {
         const cfg = await api("/api/config");
         token = (cfg.mapbox_token || "").trim();
+        mapToken = token;
       } catch (_) {}
       if (token) {
         L.tileLayer(
@@ -727,18 +741,58 @@
       }
     }
 
+    async function drawRoute(which, from, to) {
+      const map = maps[which];
+      if (!map || !from || !to) return;
+      let coords = [[from.lng, from.lat], [to.lng, to.lat]];
+      if (mapToken) {
+        try {
+          const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${from.lng},${from.lat};${to.lng},${to.lat}?geometries=geojson&overview=full&access_token=${encodeURIComponent(mapToken)}`;
+          const res = await fetch(url);
+          const data = await res.json();
+          const line = data.routes && data.routes[0] && data.routes[0].geometry && data.routes[0].geometry.coordinates;
+          if (line && line.length) coords = line;
+        } catch (_) {}
+      }
+      const latlngs = coords.map((c) => [c[1], c[0]]);
+      if (routes[which]) routes[which].setLatLngs(latlngs);
+      else routes[which] = L.polyline(latlngs, { color: "#1d6fd8", weight: 5, opacity: 0.85 }).addTo(map);
+    }
+
+    function driverPoint() {
+      if (!session.ride || !session.ride.assigned_driver_id) return null;
+      const marker = markers.cars.get(session.ride.assigned_driver_id);
+      if (!marker) return null;
+      const p = marker.getLatLng();
+      return { lat: p.lat, lng: p.lng };
+    }
+
     async function refreshRide() {
       if (!session.rideId) return;
       const data = await api(`/api/ride-requests/${session.rideId}`);
       const ride = data.ride || {};
+      session.ride = ride;
       $("ride-id").textContent = ride.id || session.rideId;
       $("est-fare").textContent = rupees(ride.estimated_fare_cents);
-      if (ride.status === "ASSIGNED") {
-        $("rider-status").textContent = "Driver assigned. Their car stays on the map.";
+      const coming = ride.status === "ACCEPTED" || ride.status === "ASSIGNED";
+      $("btn-board").hidden = !coming;
+      $("btn-finish").hidden = ride.status !== "IN_PROGRESS";
+      $("btn-ride").hidden = ride.status && ride.status !== "COMPLETED" && ride.status !== "NO_DRIVER";
+      if (ride.status === "COMPLETED") {
+        $("rider-status").textContent = "Ride complete.";
+        $("btn-ride").hidden = false;
+      } else if (coming) {
+        $("rider-status").textContent = "Driver accepted. They are coming to you.";
+        const car = driverPoint();
+        if (car) drawRoute("rider", car, { lat: ride.pickup_lat, lng: ride.pickup_lng });
+      } else if (ride.status === "IN_PROGRESS") {
+        $("rider-status").textContent = "Trip started. The blue line is the way to your drop.";
+        const car = driverPoint() || { lat: ride.pickup_lat, lng: ride.pickup_lng };
+        drawRoute("rider", car, { lat: ride.drop_lat, lng: ride.drop_lng });
       } else if (ride.status === "NO_DRIVER") {
-        $("rider-status").textContent = "No driver was online. Go online in the driver tab, then request again.";
+        $("rider-status").textContent = "No driver was online. Ask the driver to go online, then request again.";
       } else {
-        $("rider-status").textContent = "Searching for a driver…";
+        $("rider-status").textContent = "Waiting for a driver to accept.";
       }
     }
 
@@ -763,6 +817,27 @@
       every(2000, refreshRide);
     }
 
+    async function pollOpenRides() {
+      if (!online || !points.driver || !session.driverId) return;
+      const held = await api(`/api/drivers/${session.driverId}/offer`);
+      if (held.ride) {
+        $("ask").hidden = true;
+        return;
+      }
+      const data = await api(`/api/open-rides?lat=${points.driver.lat}&lng=${points.driver.lng}`);
+      pendingRide = (data.rides || []).find((ride) => !declined.has(ride.id)) || null;
+      if (!pendingRide) {
+        $("ask").hidden = true;
+        $("driver-status").textContent = "Online. Waiting for a rider nearby.";
+        return;
+      }
+      $("ask").hidden = false;
+      $("ask-text").textContent =
+        `Pickup ${Number(pendingRide.pickup_lat).toFixed(5)}, ${Number(pendingRide.pickup_lng).toFixed(5)}` +
+        ` · ${rupees(pendingRide.estimated_fare_cents)}`;
+      $("driver-status").textContent = "A rider is waiting. Accept the trip?";
+    }
+
     async function publishPresence() {
       if (!session.driverId || !points.driver) return;
       await api(`/api/drivers/${session.driverId}/presence`, {
@@ -778,11 +853,18 @@
       const box = $("offer");
       if (!ride) {
         box.hidden = true;
-        if (online) $("driver-status").textContent = "Online. Waiting for a rider nearby.";
+        if (online) await pollOpenRides();
         return;
       }
+      $("ask").hidden = true;
       box.hidden = false;
-      $("driver-status").textContent = "You have a ride.";
+      $("driver-status").textContent = ride.status === "IN_PROGRESS"
+        ? "The rider is in the car. Head to the drop."
+        : "Accepted. Drive to the passenger.";
+      const target = ride.status === "IN_PROGRESS"
+        ? { lat: ride.drop_lat, lng: ride.drop_lng }
+        : { lat: ride.pickup_lat, lng: ride.pickup_lng };
+      if (points.driver) drawRoute("driver", points.driver, target);
       $("offer-text").textContent =
         `Pickup ${Number(ride.pickup_lat).toFixed(5)}, ${Number(ride.pickup_lng).toFixed(5)}` +
         ` → drop ${Number(ride.drop_lat).toFixed(5)}, ${Number(ride.drop_lng).toFixed(5)}` +
@@ -935,6 +1017,53 @@
       }
     };
 
+    $("btn-board").onclick = async () => {
+      try {
+        const data = await api(`/api/ride-requests/${session.rideId}/board`, { method: "POST" });
+        session.ride = data.ride;
+        await refreshRide();
+      } catch (e) {
+        $("rider-status").textContent = e.message;
+      }
+    };
+
+    $("btn-finish").onclick = async () => {
+      try {
+        const data = await api(`/api/ride-requests/${session.rideId}/finish`, { method: "POST" });
+        session.ride = data.ride;
+        await refreshRide();
+      } catch (e) {
+        $("rider-status").textContent = e.message;
+      }
+    };
+
+    $("btn-accept").onclick = async () => {
+      try {
+        if (!pendingRide || !points.driver) return;
+        const data = await api(`/api/ride-requests/${pendingRide.id}/accept`, {
+          method: "POST",
+          body: { driver_id: session.driverId, lat: points.driver.lat, lng: points.driver.lng },
+        });
+        $("ask").hidden = true;
+        pendingRide = null;
+        $("driver-status").textContent = "Accepted. Drive to the passenger.";
+        if (data.ride) {
+          placeMarker(maps.driver, "offerPickup", data.ride.pickup_lat, data.ride.pickup_lng, pinIcon("pickup"));
+          placeMarker(maps.driver, "offerDrop", data.ride.drop_lat, data.ride.drop_lng, pinIcon("drop"));
+        }
+        await refreshOffer();
+      } catch (e) {
+        $("driver-status").textContent = e.message;
+      }
+    };
+
+    $("btn-decline").onclick = () => {
+      if (pendingRide) declined.add(pendingRide.id);
+      pendingRide = null;
+      $("ask").hidden = true;
+      $("driver-status").textContent = "Online. Waiting for a rider nearby.";
+    };
+
     $("btn-online").onclick = async () => {
       try {
         if (!points.driver) throw new Error("Allow location for this site, then try again.");
@@ -953,6 +1082,7 @@
         every(15000, publishPresence);
         every(2000, refreshOffer);
         refreshOffer().catch(() => {});
+        every(3000, pollOpenRides);
       } catch (e) {
         $("driver-status").textContent = e.message;
       }

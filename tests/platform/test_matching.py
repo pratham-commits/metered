@@ -64,10 +64,11 @@ def test_duplicate_driver_is_offered_once(apps, monkeypatch):
     module.handle_job({"ride_id": "ride-1", "pickup_zone": pickup, "rider_id": "rider-1"})
 
     assert driver.GetCandidates.call_count == 1
-    assert assign.Assign.call_count == 1
-    assert "ASSIGNED" in conn.execute.call_args_list[-1].args[0]
-    store.publish.assert_called_once()
-    assert store.publish.call_args.args[0]["event_type"] == "RIDE_ASSIGNED"
+    assign.Assign.assert_not_called()
+    update = conn.execute.call_args_list[-1]
+    assert "REQUESTED" in update.args[0]
+    assert update.args[1][0] == "REQUESTED"
+    store.publish.assert_not_called()
     assert zone in driver.GetCandidates.call_args.args[0].neighbor_zones
 
 
@@ -93,11 +94,11 @@ def test_second_candidate_wins_when_the_first_is_taken(apps, monkeypatch):
 
     module.handle_job({"ride_id": "ride-2", "pickup_zone": pickup, "rider_id": "rider-2"})
 
-    assert assign.Assign.call_count == 2
+    assign.Assign.assert_not_called()
     update = conn.execute.call_args_list[-1]
-    assert "ASSIGNED" in update.args[0]
-    assert update.args[1][0] == "driver-2"
-    store.publish.assert_called_once()
+    assert "REQUESTED" in update.args[0]
+    assert update.args[1][0] == "REQUESTED"
+    store.publish.assert_not_called()
 
 
 def test_no_driver_does_not_publish_assignment(apps, monkeypatch):
@@ -105,9 +106,7 @@ def test_no_driver_does_not_publish_assignment(apps, monkeypatch):
     pickup = zone_for(13.0827, 80.2707)
     monkeypatch.setattr(module, "ring", lambda: HashRing(["p0"]))
     driver = MagicMock()
-    driver.GetCandidates.return_value = MagicMock(
-        candidates=[MagicMock(driver_id="driver-1", partition_id="p0")]
-    )
+    driver.GetCandidates.return_value = MagicMock(candidates=[])
     monkeypatch.setattr(module, "driver_stub", lambda: (driver, MagicMock()))
     assign = MagicMock()
     assign.Assign.return_value = MagicMock(assigned=False, reason="driver_not_available")
@@ -119,7 +118,10 @@ def test_no_driver_does_not_publish_assignment(apps, monkeypatch):
 
     module.handle_job({"ride_id": "ride-3", "pickup_zone": pickup, "rider_id": "rider-3"})
 
-    assert "NO_DRIVER" in conn.execute.call_args_list[-1].args[0]
+    update = conn.execute.call_args_list[-1]
+    assert "status = %s" in update.args[0]
+    assert update.args[1][0] == "NO_DRIVER"
+    assign.Assign.assert_not_called()
     store.publish.assert_not_called()
 
 

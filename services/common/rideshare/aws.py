@@ -162,6 +162,30 @@ class Store:
                 return False
             raise
 
+    def update_location(self, driver_id: str, lat: float, lng: float, zone: str, partitions: list[str]) -> bool:
+        for partition_id in partitions:
+            try:
+                self.ddb.update_item(
+                    TableName=self.driver_table,
+                    Key={"partition_id": {"S": partition_id}, "driver_id": {"S": driver_id}},
+                    UpdateExpression="SET lat = :lat, lng = :lng, #z = :zone, updated_at = :now",
+                    ConditionExpression="#s = :assigned",
+                    ExpressionAttributeNames={"#s": "status", "#z": "zone"},
+                    ExpressionAttributeValues={
+                        ":lat": {"N": str(lat)},
+                        ":lng": {"N": str(lng)},
+                        ":zone": {"S": zone},
+                        ":now": {"S": _now()},
+                        ":assigned": {"S": "ASSIGNED"},
+                    },
+                )
+                return True
+            except ClientError as exc:
+                if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                    continue
+                raise
+        return False
+
     def release(self, partition_id: str, driver_id: str) -> None:
         self.ddb.update_item(
             TableName=self.driver_table,

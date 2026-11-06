@@ -135,6 +135,12 @@ class RingPreviewIn(BaseModel):
     zones: list[str]
 
 
+class AcceptIn(BaseModel):
+    driver_id: UUID
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+
+
 class ConflictIn(BaseModel):
     ride_id: UUID
     driver_id: str
@@ -272,12 +278,13 @@ def api_live_drivers(lat: float, lng: float, k: int = 1):
 
 @app.get("/api/drivers/{driver_id}/offer")
 def api_driver_offer(driver_id: UUID):
-    """Latest ride matching assigned to this driver. Empty until one exists."""
+    """Ride this driver has accepted and not finished."""
     with connection() as conn:
         row = conn.execute(
             """
             SELECT id::text FROM ride_requests
-            WHERE assigned_driver_id = %s AND status = 'ASSIGNED'
+            WHERE assigned_driver_id = %s
+              AND status IN ('ACCEPTED', 'IN_PROGRESS', 'ASSIGNED')
             ORDER BY updated_at DESC
             LIMIT 1
             """,
@@ -286,6 +293,110 @@ def api_driver_offer(driver_id: UUID):
         if row is None:
             return {"ride": None}
         return {"ride": ride_row(conn, row[0])}
+
+
+@app.get("/api/open-rides")
+def api_open_rides(lat: float, lng: float):
+    """Requested rides near this driver, waiting for someone to accept."""
+    zones = cells_around(lat, lng, 1)
+    with connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id::text FROM ride_requests
+            WHERE status = 'REQUESTED' AND pickup_zone = ANY(%s)
+            ORDER BY created_at DESC
+            LIMIT 5
+            """,
+            (zones,),
+        ).fetchall()
+        return {"rides": [ride_row(conn, row[0]) for row in rows]}
+
+
+@app.post("/api/ride-requests/{ride_id}/accept")
+def api_accept(ride_id: UUID, body: AcceptIn):
+    zone = zone_for(body.lat, body.lng)
+    partition_id = live_ring().owner(zone)
+    channel = grpc.insecure_channel(DISPATCH_GRPC)
+    try:
+        stub = dispatch_pb2_grpc.DispatchStub(channel)
+        response = stub.Assign(
+            dispatch_pb2.AssignRequest(
+                ride_id=str(ride_id),
+                driver_id=str(body.driver_id),
+                partition_id=partition_id,
+            ),
+            timeout=10,
+        )
+    finally:
+        channel.close()
+    if not response.assigned:
+        raise HTTPException(status_code=409, detail=response.reason or "Could not accept")
+    with connection() as conn:
+        updated = conn.execute(
+            """
+            UPDATE ride_requests
+            SET status = 'ACCEPTED',
+                assigned_driver_id = %s,
+                assigned_partition_id = %s,
+                updated_at = now()
+            WHERE id = %s AND status = 'REQUESTED'
+            RETURNING id::text
+            """,
+            (str(body.driver_id), partition_id, str(ride_id)),
+        ).fetchone()
+        if updated is None:
+            raise HTTPException(status_code=409, detail="Ride is no longer open")
+        record_hop(
+            conn,
+            str(ride_id),
+            "ride-request",
+            "GRPC",
+            "NOSQL",
+            {"rpc": "Assign", "driver_id": str(body.driver_id), "accepted": True},
+        )
+        return {"ride": ride_row(conn, str(ride_id))}
+
+
+@app.post("/api/ride-requests/{ride_id}/board")
+def api_board(ride_id: UUID):
+    with connection() as conn:
+        row = conn.execute(
+            """
+            UPDATE ride_requests
+            SET status = 'IN_PROGRESS', updated_at = now()
+            WHERE id = %s AND status IN ('ACCEPTED', 'ASSIGNED')
+            RETURNING id::text
+            """,
+            (str(ride_id),),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=409, detail="Driver has not accepted yet")
+        record_hop(conn, str(ride_id), "ride-request", "REST", "SQL", {"action": "board"})
+        return {"ride": ride_row(conn, str(ride_id))}
+
+
+@app.post("/api/ride-requests/{ride_id}/finish")
+def api_finish(ride_id: UUID):
+    with connection() as conn:
+        row = conn.execute(
+            """
+            UPDATE ride_requests
+            SET status = 'COMPLETED', updated_at = now()
+            WHERE id = %s AND status = 'IN_PROGRESS'
+            RETURNING assigned_driver_id::text, assigned_partition_id
+            """,
+            (str(ride_id),),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=409, detail="The ride has not started")
+        record_hop(conn, str(ride_id), "ride-request", "REST", "SQL", {"action": "finish"})
+        ride = ride_row(conn, str(ride_id))
+    if row[0] and row[1]:
+        try:
+            get_store().release(row[1], row[0])
+        except Exception:
+            log.exception("release driver failed")
+    return {"ride": ride}
 
 
 @app.post("/api/trips/{ride_id}/progress")

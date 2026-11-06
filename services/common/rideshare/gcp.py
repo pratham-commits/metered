@@ -141,6 +141,19 @@ class Store:
 
         return bool(take(self.client.transaction()))
 
+    def update_location(self, driver_id: str, lat: float, lng: float, zone: str, partitions: list[str]) -> bool:
+        """Keep an assigned driver's pin moving without dropping the ride lock."""
+        for partition_id in partitions:
+            ref = self._driver_ref(partition_id, driver_id)
+            snapshot = ref.get()
+            if not snapshot.exists:
+                continue
+            if (snapshot.to_dict() or {}).get("status") != "ASSIGNED":
+                continue
+            ref.update({"lat": lat, "lng": lng, "zone": zone, "updated_at": _now()})
+            return True
+        return False
+
     def release(self, partition_id: str, driver_id: str) -> None:
         self._driver_ref(partition_id, driver_id).update(
             {"status": "AVAILABLE", "assigned_ride_id": "", "updated_at": _now()}
