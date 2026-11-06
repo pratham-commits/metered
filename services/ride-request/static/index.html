@@ -584,6 +584,8 @@
     let pendingRide = null;
     const declined = new Set();
     let watchId = null;
+    let assignedPin = null;
+    let riderFrame = "";
 
     const $ = (id) => document.getElementById(id);
 
@@ -739,21 +741,55 @@
       });
     }
 
+    function clearRoute(which) {
+      if (routes[which]) {
+        routes[which].remove();
+        routes[which] = null;
+      }
+    }
+
+    function clearOfferPins() {
+      for (const key of ["offerPickup", "offerDrop"]) {
+        if (markers[key]) {
+          markers[key].remove();
+          markers[key] = null;
+        }
+      }
+    }
+
+    function fitMap(which, pts) {
+      const map = maps[which];
+      const usable = (pts || []).filter((p) => p && p.lat != null && p.lng != null);
+      if (!map || !usable.length) return;
+      if (usable.length === 1) {
+        map.setView([usable[0].lat, usable[0].lng], 14);
+        return;
+      }
+      map.fitBounds(usable.map((p) => [p.lat, p.lng]), { padding: [48, 48], maxZoom: 15 });
+    }
+
     async function refreshCars() {
       if (!points.pickup || !maps.rider) return;
-      const data = await api(`/api/live-drivers?lat=${points.pickup.lat}&lng=${points.pickup.lng}&k=2`);
+      const data = await api(`/api/live-drivers?lat=${points.pickup.lat}&lng=${points.pickup.lng}&k=8`);
       const active = session.ride && session.ride.assigned_driver_id;
+      assignedPin = null;
       if (active) {
         try {
           const pin = await api(`/api/drivers/${active}/location`);
-          if (pin.driver) {
+          if (pin.driver && pin.driver.lat != null && pin.driver.lng != null) {
+            assignedPin = { lat: pin.driver.lat, lng: pin.driver.lng };
             const list = data.drivers || [];
             const known = list.find((d) => d.driver_id === active);
             if (known) {
               known.lat = pin.driver.lat;
               known.lng = pin.driver.lng;
             } else {
-              list.push(pin.driver);
+              list.push({
+                driver_id: active,
+                lat: pin.driver.lat,
+                lng: pin.driver.lng,
+                name: "Driver",
+              });
               data.drivers = list;
             }
           }
@@ -761,6 +797,7 @@
       }
       drawCars(maps.rider, data.drivers, active || "");
       paintRiderRoute();
+      frameRider(data.drivers || []);
       const n = (data.drivers || []).length;
       if (!session.rideId) {
         $("rider-status").textContent = n
@@ -788,6 +825,7 @@
     }
 
     function driverPoint() {
+      if (assignedPin) return { lat: assignedPin.lat, lng: assignedPin.lng };
       if (!session.ride || !session.ride.assigned_driver_id) return null;
       const marker = markers.cars.get(session.ride.assigned_driver_id);
       if (!marker) return null;
@@ -797,14 +835,46 @@
 
     function paintRiderRoute() {
       const ride = session.ride;
-      if (!ride) return;
+      if (ride && ride.status === "COMPLETED") {
+        clearRoute("rider");
+        return;
+      }
+      const activeTrip = ride && (ride.status === "ACCEPTED" || ride.status === "ASSIGNED" || ride.status === "IN_PROGRESS");
+      if (!activeTrip) {
+        if (points.pickup && points.drop) drawRoute("rider", points.pickup, points.drop);
+        else clearRoute("rider");
+        return;
+      }
       const car = driverPoint();
       if (!car) return;
-      if (ride.status === "ACCEPTED" || ride.status === "ASSIGNED") {
-        drawRoute("rider", car, { lat: ride.pickup_lat, lng: ride.pickup_lng });
-      } else if (ride.status === "IN_PROGRESS") {
+      if (ride.status === "IN_PROGRESS") {
         drawRoute("rider", car, { lat: ride.drop_lat, lng: ride.drop_lng });
+      } else {
+        drawRoute("rider", car, { lat: ride.pickup_lat, lng: ride.pickup_lng });
       }
+    }
+
+    function frameRider(drivers) {
+      const ride = session.ride;
+      const car = driverPoint();
+      let key = "";
+      let pts = [];
+      if (ride && (ride.status === "ACCEPTED" || ride.status === "ASSIGNED") && car) {
+        key = `to-pickup:${ride.id}`;
+        pts = [car, { lat: ride.pickup_lat, lng: ride.pickup_lng }];
+      } else if (ride && ride.status === "IN_PROGRESS" && car) {
+        key = `to-drop:${ride.id}`;
+        pts = [car, { lat: ride.drop_lat, lng: ride.drop_lng }];
+      } else if (ride && ride.status === "COMPLETED") {
+        key = `done:${ride.id}`;
+      } else if (points.pickup && points.drop) {
+        const ids = (drivers || []).map((d) => d.driver_id).filter(Boolean).sort().join(",");
+        key = `preview:${points.pickup.lat.toFixed(5)},${points.pickup.lng.toFixed(5)}:${points.drop.lat.toFixed(5)},${points.drop.lng.toFixed(5)}:${ids}`;
+        pts = [points.pickup, points.drop].concat((drivers || []).map((d) => ({ lat: d.lat, lng: d.lng })));
+      }
+      if (!key || key === riderFrame) return;
+      riderFrame = key;
+      if (pts.length) fitMap("rider", pts);
     }
 
     async function refreshRide() {
@@ -821,16 +891,24 @@
       if (ride.status === "COMPLETED") {
         $("rider-status").textContent = "Ride complete.";
         $("btn-ride").hidden = false;
+        paintRiderRoute();
+        frameRider();
       } else if (coming) {
         $("rider-status").textContent = "Driver accepted. They are coming to you.";
         paintRiderRoute();
+        frameRider();
       } else if (ride.status === "IN_PROGRESS") {
         $("rider-status").textContent = "Trip started. The blue line is the way to your drop.";
         paintRiderRoute();
+        frameRider();
       } else if (ride.status === "NO_DRIVER") {
         $("rider-status").textContent = "That request closed. Request again — it stays open until a driver accepts.";
+        paintRiderRoute();
+        frameRider();
       } else {
         $("rider-status").textContent = "Waiting for a driver to accept.";
+        paintRiderRoute();
+        frameRider();
       }
     }
 
@@ -847,7 +925,8 @@
       if (!points.drop) points.drop = { lat: loc.lat + 0.01, lng: loc.lng + 0.01 };
       placeMarker(map, "pickup", points.pickup.lat, points.pickup.lng, pinIcon("pickup"));
       placeMarker(map, "drop", points.drop.lat, points.drop.lng, pinIcon("drop"));
-      map.setView([points.pickup.lat, points.pickup.lng], 14);
+      paintRiderRoute();
+      frameRider();
       if (session.rideId) $("ride-id").textContent = session.rideId;
       await refreshCars().catch(() => {});
       if (session.rideId) await refreshRide().catch(() => {});
@@ -866,6 +945,11 @@
       pendingRide = (data.rides || []).find((ride) => !declined.has(ride.id)) || null;
       if (!pendingRide) {
         $("ask").hidden = true;
+        if (!driverRide) {
+          clearOfferPins();
+          clearRoute("driver");
+          framedRide = "";
+        }
         $("driver-status").textContent = "Online. Waiting for a rider nearby.";
         return;
       }
@@ -874,6 +958,19 @@
         `Pickup ${Number(pendingRide.pickup_lat).toFixed(5)}, ${Number(pendingRide.pickup_lng).toFixed(5)}` +
         ` · ${rupees(pendingRide.estimated_fare_cents)}`;
       $("driver-status").textContent = "A rider is waiting. Accept the trip?";
+      if (maps.driver && points.driver) {
+        placeMarker(maps.driver, "offerPickup", pendingRide.pickup_lat, pendingRide.pickup_lng, pinIcon("pickup"));
+        placeMarker(maps.driver, "offerDrop", pendingRide.drop_lat, pendingRide.drop_lng, pinIcon("drop"));
+        paintDriverRoute(true);
+        const frame = "pending:" + pendingRide.id;
+        if (frame !== framedRide) {
+          framedRide = frame;
+          maps.driver.fitBounds([
+            [pendingRide.pickup_lat, pendingRide.pickup_lng],
+            [points.driver.lat, points.driver.lng],
+          ], { padding: [40, 40] });
+        }
+      }
     }
 
     async function publishPresence() {
@@ -925,13 +1022,22 @@
 
     let driverRouteAt = 0;
     function paintDriverRoute(force) {
-      if (!driverRide || !points.driver) return;
+      if (!maps.driver || !points.driver) return;
+      let target = null;
+      if (driverRide) {
+        target = driverRide.status === "IN_PROGRESS"
+          ? { lat: driverRide.drop_lat, lng: driverRide.drop_lng }
+          : { lat: driverRide.pickup_lat, lng: driverRide.pickup_lng };
+      } else if (online && pendingRide) {
+        target = { lat: pendingRide.pickup_lat, lng: pendingRide.pickup_lng };
+      }
+      if (!target) {
+        clearRoute("driver");
+        return;
+      }
       const now = Date.now();
       if (!force && now - driverRouteAt < 2000) return;
       driverRouteAt = now;
-      const target = driverRide.status === "IN_PROGRESS"
-        ? { lat: driverRide.drop_lat, lng: driverRide.drop_lng }
-        : { lat: driverRide.pickup_lat, lng: driverRide.pickup_lng };
       drawRoute("driver", points.driver, target);
     }
 
@@ -1052,6 +1158,8 @@
       points.drop = { lat, lng };
       const map = await ensureMap("rider", lat, lng);
       placeMarker(map, "drop", lat, lng, pinIcon("drop"));
+      paintRiderRoute();
+      frameRider();
     });
 
     $("btn-ride").onclick = async () => {
@@ -1143,6 +1251,11 @@
           });
           online = false;
           sessionStorage.removeItem("metered-online");
+          pendingRide = null;
+          driverRide = null;
+          framedRide = "";
+          clearOfferPins();
+          clearRoute("driver");
           $("btn-online").textContent = "Go online";
           $("ask").hidden = true;
           $("driver-status").textContent = "You are offline.";

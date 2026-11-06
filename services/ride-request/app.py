@@ -246,7 +246,9 @@ async def api_presence(driver_id: UUID, request: Request):
 @app.get("/api/live-drivers")
 def api_live_drivers(lat: float, lng: float, k: int = 1):
     """Drivers currently online near this point, for the map car markers."""
-    k = max(0, min(int(k), 3))
+    # k=8 at H3 res 8 is a few kilometres, so a driver a neighbourhood
+    # away still shows on the rider map.
+    k = max(0, min(int(k), 8))
     zones = cells_around(lat, lng, k)
     partitions = nodes_from_env(os.environ.get("HASH_NODES", DEFAULT_PARTITIONS))
     live = get_store().list_in_zones(partitions, zones)
