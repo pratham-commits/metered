@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import grpc
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from uuid import UUID
 from psycopg.errors import UniqueViolation
@@ -64,21 +65,36 @@ class PresenceIn(BaseModel):
     zone: str | None = None
 
 
+def _driver_payload(row) -> dict:
+    return {"id": row[0], "name": row[1], "phone": row[2], "vehicle_number": row[3]}
+
+
 @app.post("/drivers", status_code=201)
 def create_driver(body: DriverIn):
+    """Existing phone logs in. A new phone creates the driver."""
     driver_id = str(uuid.uuid4())
     try:
         with connection() as conn:
-            row = conn.execute("SELECT id::text FROM drivers WHERE phone = %s", (body.phone,)).fetchone()
-            if row:
-                raise HTTPException(status_code=409, detail="phone already registered")
+            existing = conn.execute(
+                "SELECT id::text, name, phone, vehicle_number FROM drivers WHERE phone = %s",
+                (body.phone,),
+            ).fetchone()
+            if existing:
+                return JSONResponse(status_code=200, content=_driver_payload(existing))
             conn.execute(
                 "INSERT INTO drivers (id, name, phone, vehicle_number) VALUES (%s, %s, %s, %s)",
                 (driver_id, body.name, body.phone, body.vehicle_number),
             )
     except UniqueViolation:
-        raise HTTPException(status_code=409, detail="phone already registered") from None
-    return {"id": driver_id, "name": body.name, "phone": body.phone}
+        with connection() as conn:
+            existing = conn.execute(
+                "SELECT id::text, name, phone, vehicle_number FROM drivers WHERE phone = %s",
+                (body.phone,),
+            ).fetchone()
+        if existing:
+            return JSONResponse(status_code=200, content=_driver_payload(existing))
+        raise
+    return {"id": driver_id, "name": body.name, "phone": body.phone, "vehicle_number": body.vehicle_number}
 
 
 @app.get("/drivers/{driver_id}")

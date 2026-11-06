@@ -524,7 +524,7 @@
     <section class="stage">
       <div class="stage-head">
         <h2>Drive</h2>
-        <p>Go online near the rider. Your car is drawn on this map and on the rider's map. A request appears here after matching assigns it.</p>
+        <p>Allow location. Your phone's position is the car. Go online before the rider requests.</p>
       </div>
       <div id="driver-map" class="map"></div>
       <div class="panel wide">
@@ -538,11 +538,6 @@
             <label>Phone</label>
             <input id="driver-phone" value="+919800000002" />
           </div>
-        </div>
-        <label>Where you are</label>
-        <div class="search-wrap">
-          <input id="driver-q" placeholder="Search the same area as the rider" autocomplete="off" />
-          <ul id="driver-suggest" class="suggest" hidden></ul>
         </div>
         <button type="button" id="btn-online">Go online</button>
         <p class="status-line" id="driver-status">You are offline.</p>
@@ -573,6 +568,7 @@
     const points = { pickup: null, drop: null, driver: null };
     const timers = [];
     let online = false;
+    let watchId = null;
 
     const $ = (id) => document.getElementById(id);
 
@@ -806,21 +802,34 @@
       points.driver = { lat, lng };
       return ensureMap("driver", lat, lng).then((map) => {
         if (markers.self) markers.self.remove();
-        markers.self = L.marker([lat, lng], { icon: carIcon(), draggable: true, title: "You" }).addTo(map);
-        markers.self.on("dragend", () => {
-          const p = markers.self.getLatLng();
-          points.driver = { lat: p.lat, lng: p.lng };
-          if (online) publishPresence().catch((e) => { $("driver-status").textContent = e.message; });
-        });
+        markers.self = L.marker([lat, lng], { icon: carIcon(), title: "You" }).addTo(map);
         map.setView([lat, lng], 14);
       });
     }
 
+    function followDriver() {
+      if (!navigator.geolocation) {
+        $("driver-status").textContent = "This browser has no location.";
+        return;
+      }
+      if (watchId != null) navigator.geolocation.clearWatch(watchId);
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          showDriverCar(pos.coords.latitude, pos.coords.longitude).then(() => {
+            if (online) publishPresence().catch((e) => { $("driver-status").textContent = e.message; });
+          });
+        },
+        () => { $("driver-status").textContent = "Allow location for this site."; },
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+      );
+    }
+
     async function startDriver() {
       if (session.driverId) $("driver-id").textContent = session.driverId;
-      const loc = points.driver || await locate();
+      followDriver();
+      const loc = await locate();
       if (!loc) {
-        $("driver-status").textContent = "Allow location, or search where you are, then go online.";
+        $("driver-status").textContent = "Allow location for this site.";
         return;
       }
       await showDriverCar(loc.lat, loc.lng);
@@ -830,6 +839,16 @@
         every(2000, refreshOffer);
         await refreshOffer().catch(() => {});
       }
+    }
+
+    function newId() {
+      if (window.crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      bytes[6] = (bytes[6] & 15) | 64;
+      bytes[8] = (bytes[8] & 63) | 128;
+      const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     }
 
     function locate() {
@@ -848,6 +867,10 @@
 
     function show(role) {
       clearTimers();
+      if (watchId != null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
       session.role = role || "";
       if (role) sessionStorage.setItem("metered-role", role);
       else sessionStorage.removeItem("metered-role");
@@ -879,22 +902,17 @@
       const map = await ensureMap("rider", lat, lng);
       placeMarker(map, "drop", lat, lng, pinIcon("drop"));
     });
-    wireSearch("driver-q", "driver-suggest", async (lat, lng) => {
-      await showDriverCar(lat, lng);
-      if (online) await publishPresence();
-    });
 
     $("btn-ride").onclick = async () => {
       try {
         if (!points.pickup || !points.drop) throw new Error("Set a pickup and a drop first.");
-        if (!session.riderId) {
-          const rider = await api("/api/riders", {
-            method: "POST",
-            body: { name: $("rider-name").value, phone: $("rider-phone").value },
-          });
-          session.riderId = rider.id;
-          sessionStorage.setItem("metered-rider", rider.id);
-        }
+        const rider = await api("/api/riders", {
+          method: "POST",
+          body: { name: $("rider-name").value, phone: $("rider-phone").value },
+        });
+        session.riderId = rider.id;
+        sessionStorage.setItem("metered-rider", rider.id);
+        if (rider.name) $("rider-name").value = rider.name;
         const ride = await api("/api/ride-requests", {
           method: "POST",
           body: {
@@ -903,7 +921,7 @@
             pickup_lng: points.pickup.lng,
             drop_lat: points.drop.lat,
             drop_lng: points.drop.lng,
-            idempotency_key: crypto.randomUUID(),
+            idempotency_key: newId(),
           },
         });
         session.rideId = ride.id;
@@ -919,16 +937,15 @@
 
     $("btn-online").onclick = async () => {
       try {
-        if (!points.driver) throw new Error("Waiting for your location.");
-        if (!session.driverId) {
-          const driver = await api("/api/drivers", {
-            method: "POST",
-            body: { name: $("driver-name").value, phone: $("driver-phone").value },
-          });
-          session.driverId = driver.id;
-          sessionStorage.setItem("metered-driver", driver.id);
-          $("driver-id").textContent = driver.id;
-        }
+        if (!points.driver) throw new Error("Allow location for this site, then try again.");
+        const driver = await api("/api/drivers", {
+          method: "POST",
+          body: { name: $("driver-name").value, phone: $("driver-phone").value },
+        });
+        session.driverId = driver.id;
+        sessionStorage.setItem("metered-driver", driver.id);
+        $("driver-id").textContent = driver.id;
+        if (driver.name) $("driver-name").value = driver.name;
         online = true;
         await publishPresence();
         $("driver-status").textContent = "Online. Your car is on the map.";
