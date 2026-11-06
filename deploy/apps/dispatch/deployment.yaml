@@ -1,5 +1,89 @@
-# Person 2. Deployment, Service, and ServiceAccount named dispatch.
-# Ports http 8005 and grpc 9005. 2 replicas. No Ingress.
-# ServiceAccount annotation:
-#   iam.gke.io/gcp-service-account: rideshare-dispatch@metered-513804.iam.gserviceaccount.com
-# Mount rideshare-kafka-cluster-ca-cert at /etc/kafka for Kafka TLS.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dispatch
+  namespace: rideshare
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dispatch
+  template:
+    metadata:
+      labels:
+        app: dispatch
+      annotations:
+        rideshare.io/config-version: "1"
+    spec:
+      serviceAccountName: dispatch
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      containers:
+        - name: dispatch
+          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/dispatch:REPLACE_SHA
+          ports:
+            - name: http
+              containerPort: 8005
+            - name: grpc
+              containerPort: 9005
+          envFrom:
+            - secretRef:
+                name: rideshare-secret
+            - configMapRef:
+                name: rideshare-config
+          env:
+            - name: SERVICE_NAME
+              value: dispatch
+          volumeMounts:
+            - name: kafka-ca
+              mountPath: /etc/kafka
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8005
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8005
+            initialDelaySeconds: 10
+      volumes:
+        - name: kafka-ca
+          secret:
+            secretName: rideshare-kafka-cluster-ca-cert
+            items:
+              - key: ca.crt
+                path: ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dispatch
+  namespace: rideshare
+spec:
+  selector:
+    app: dispatch
+  ports:
+    - name: http
+      port: 8005
+      targetPort: 8005
+    - name: grpc
+      port: 9005
+      targetPort: 9005
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dispatch
+  namespace: rideshare
+  annotations:
+    iam.gke.io/gcp-service-account: rideshare-dispatch@metered-513804.iam.gserviceaccount.com
