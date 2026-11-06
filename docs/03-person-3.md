@@ -1,9 +1,9 @@
 # Person 3 — Trip Tracking, Fare, Demand Analytics
 
 You own letters **b** and **e**, plus Trip Tracking, Fare, Demand Analytics, the
-demand sink and the Flink job. Person 1 has already created the GCP platform,
-Rider, Driver and the shared library. Person 2 owns the ride path and the public
-UI.
+demand sink, the Flink job, and the demand page. Person 1 has already created
+the GCP platform, Rider, Driver and the shared library. Person 2 owns the ride
+path and the public ride UI. Do not add the demand page to that UI.
 
 ## 1. What exists before you start
 
@@ -217,6 +217,29 @@ Port `8010`. Part of Demand Analytics, not a ninth service.
 - If the topic does not exist, catch the error, sleep 5 seconds, retry. Keep the
   thread alive.
 - Expose `/healthz`, `/readyz` and `/metrics`.
+
+### 4.3 Demand page
+
+Serve this from Trip Tracking, next to `GET /demand`. It is not a section of
+Person 2's public UI, and Trip Tracking stays without an Ingress. Open it with
+a port-forward to port `8006`.
+
+The page reads `{topic, windows}` from `GET /demand` and shows, for each
+window:
+
+- `zone`
+- `unique_riders`
+- `request_count`
+- `assigned_count`
+- `online_drivers`
+- `queue_length`
+- `imbalance`
+- `window_start` and `window_end`
+- topic `demand-results`
+
+A window whose `window_end` is newer than 15 minutes is the proof for letter
+**e**. The page only displays windows the sink has written. It does not invent
+them.
 
 ## 5. Infrastructure
 

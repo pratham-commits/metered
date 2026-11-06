@@ -57,6 +57,7 @@ def dispatch_stub():
 
 def handle_job(job: dict) -> None:
     ride_id = job["ride_id"]
+    log.info("match job", extra={"event": "match_job", "ride_id": ride_id})
     pickup_zone = job["pickup_zone"]
     hash_ring = ring()
     neighbor_zones = neighbors(pickup_zone)

@@ -29,7 +29,7 @@ the stream job.
 |---|---|---|---|
 | Person 1 | Rider Service, Driver Service | **a** Terraform, **d** GitOps, **g** GCS + Cloud SQL + Firestore | The cluster, network, IAM, Pub/Sub, Kafka, shared Python library |
 | Person 2 | Ride Request Service, Matching Engine, Dispatch Service | **c** GKE, HPA, k6, **f** consistent hashing, **h** Prometheus, Grafana, Cloud Logging | The public web app and the professor checklist page |
-| Person 3 | Trip Tracking Service, Fare Service, Demand Analytics Service | **b** Cloud Run functions plus REST, gRPC and Pub/Sub, **e** Flink on Dataproc | The stream job, the serverless function, the completion trigger |
+| Person 3 | Trip Tracking Service, Fare Service, Demand Analytics Service | **b** Cloud Run functions plus REST, gRPC and Pub/Sub, **e** Flink on Dataproc | The stream job, the serverless function, the completion trigger, the demand page |
 
 `task_division.txt` at the repo root must contain the real IDs and names before
 submission.
@@ -206,9 +206,10 @@ ids would scatter one neighbourhood across every partition.
 The checklist page starts every row as "Show this screen" or "Not built yet."
 It marks a row Proven only when it can see the evidence: all health checks green,
 a finished ride that contains every hop, a ring preview where at least one cell
-stayed, a demand window newer than 15 minutes, and replica counts above the
-minimum while k6 is running. Terraform, Argo CD, Grafana and Cloud Logging stay
-"Show this screen" with the exact command or URL.
+stayed, and replica counts above the minimum while k6 is running. Terraform,
+Argo CD, Grafana and Cloud Logging stay "Show this screen" with the exact
+command or URL. Person 3 proves the demand window on the Trip Tracking demand
+page, not on this checklist.
 
 ## 4. Frozen names
 
@@ -355,8 +356,9 @@ Local checks that do not need GCP:
    Read the moved-cell count and the stayed-cell count.
 6. Complete the trip. Show the GCS completion object, the Cloud Run log line
    with the ride id, and the final fare appearing on the page.
-7. Open `/demand` after the minute rolls. Show unique riders, queue length,
-   imbalance, window start, window end and `demand-results`.
+7. Person 3 opens the Trip Tracking demand page after the minute rolls. Show
+   unique riders, queue length, imbalance, window start, window end and
+   `demand-results`.
 8. Run k6 for four minutes. Show Ride Request and Matching replicas go from 2 to
    more than 2. Open Grafana and show the same traffic on the RPS panel.
 9. Open Argo CD and show the git SHA. Open `terraform state list` and show the

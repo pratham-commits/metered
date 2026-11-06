@@ -6,9 +6,9 @@ const BASE = __ENV.BASE_URL || "http://127.0.0.1:8003";
 
 export const options = {
   stages: [
-    { duration: "1m", target: 20 },
-    { duration: "3m", target: 40 },
-    { duration: "1m", target: 0 },
+    { duration: "30s", target: 40 },
+    { duration: "4m", target: 120 },
+    { duration: "30s", target: 0 },
   ],
 };
 
@@ -23,18 +23,18 @@ export function setup() {
 }
 
 export default function (data) {
-  const jitter = Math.random() * 0.02;
+  const jitter = Math.random() * 0.08;
   const body = {
     rider_id: data.riderId,
-    pickup_lat: 12.9716 + jitter,
-    pickup_lng: 77.5946 + jitter,
-    drop_lat: 12.9352 + jitter,
-    drop_lng: 77.6245 + jitter,
+    pickup_lat: 23.03 + jitter,
+    pickup_lng: 72.54 + jitter,
+    drop_lat: 23.05 + jitter,
+    drop_lng: 72.58 + jitter,
     idempotency_key: uuidv4(),
   };
   const res = http.post(`${BASE}/api/ride-requests`, JSON.stringify(body), {
     headers: { "Content-Type": "application/json" },
   });
   check(res, { "ride accepted": (r) => r.status === 201 });
-  sleep(0.2);
+  sleep(0.05);
 }

@@ -437,6 +437,44 @@
 
     .foot span { font-family: "Fraunces", serif; color: var(--ink-soft); }
 
+    .evidence {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.86rem;
+    }
+
+    .evidence th, .evidence td {
+      text-align: left;
+      padding: 0.55rem 0.35rem;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    .evidence th {
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 0.12rem 0.45rem;
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: 1px solid var(--line);
+    }
+
+    .pill.proven { color: #0f766e; border-color: #0f766e; }
+    .pill.todo { color: var(--warn); border-color: var(--warn); }
+    .pill.show { color: var(--accent-deep); border-color: var(--accent); }
+
+    .mono { word-break: break-word; font-size: 0.8rem; color: var(--ink-soft); }
+
+    button.inline { width: auto; }
+
     @keyframes rise {
       from { opacity: 0; transform: translateY(14px); }
       to { opacity: 1; transform: translateY(0); }
@@ -450,7 +488,7 @@
       .route,
       .row { grid-template-columns: 1fr; }
       .hero-actions button { width: 100%; }
-      .top nav { display: none; }
+      .top nav { flex-wrap: wrap; gap: 0.7rem; }
       :root { --map-h: 42vh; }
     }
   </style>
@@ -460,6 +498,10 @@
     <div class="shell">
       <div class="wordmark">metered<span>.</span></div>
       <nav>
+        <a href="#ride" data-page="ride">Ride</a>
+        <a href="#trace" data-page="trace">Trace</a>
+        <a href="#ring" data-page="ring">Ring</a>
+        <a href="#checklist" data-page="checklist">Checklist</a>
         <a href="#" id="switch-role">Switch role</a>
       </nav>
     </div>
@@ -557,6 +599,78 @@
           <h2>Ride request</h2>
           <p class="meta" id="offer-text"></p>
         </div>
+      </div>
+    </section>
+  </main>
+
+  <main class="shell" id="trace-app" hidden>
+    <section class="stage">
+      <div class="stage-head">
+        <h2>Trace</h2>
+        <p>One ride id, and every hop that ride wrote: REST, SQL, Pub/Sub, gRPC, Firestore, and Kafka.</p>
+      </div>
+      <div class="panel wide">
+        <h2>Ride hops</h2>
+        <label>Ride id</label>
+        <input id="trace-id" placeholder="Paste a ride id" />
+        <button type="button" id="btn-trace" class="inline">Load trace</button>
+        <p class="status-line" id="trace-status">Load a ride to see its hops.</p>
+        <table class="evidence" id="trace-table">
+          <thead>
+            <tr><th>Service</th><th>Mechanism</th><th>Store</th><th>Detail</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <main class="shell" id="ring-app" hidden>
+    <section class="stage">
+      <div class="stage-head">
+        <h2>Ring</h2>
+        <p>Cells around this point, who owns them now, and who would own them if p4 joined. The live ring does not change.</p>
+      </div>
+      <div class="panel wide">
+        <h2>Preview</h2>
+        <div class="row">
+          <div>
+            <label>Latitude</label>
+            <input id="ring-lat" inputmode="decimal" />
+          </div>
+          <div>
+            <label>Longitude</label>
+            <input id="ring-lng" inputmode="decimal" />
+          </div>
+        </div>
+        <button type="button" id="btn-ring" class="inline">Use this point</button>
+        <p class="status-line" id="ring-status">Allow location, or type a latitude and longitude.</p>
+        <p class="meta" id="ring-summary"></p>
+        <table class="evidence" id="ring-table">
+          <thead>
+            <tr><th>Cell</th><th>Before</th><th>After p4</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <main class="shell" id="check-app" hidden>
+    <section class="stage">
+      <div class="stage-head">
+        <h2>Checklist</h2>
+        <p>Proven rows come from live data. Show rows are the screens you open beside this page.</p>
+      </div>
+      <div class="panel wide">
+        <h2>Evidence</h2>
+        <p class="status-line" id="check-status">Reading the cluster.</p>
+        <table class="evidence" id="check-table">
+          <thead>
+            <tr><th>Row</th><th>Status</th><th>Evidence</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
     </section>
   </main>
@@ -1168,7 +1282,147 @@
       });
     }
 
+    function hideEvidence() {
+      $("trace-app").hidden = true;
+      $("ring-app").hidden = true;
+      $("check-app").hidden = true;
+    }
+
+    function evidenceText(value) {
+      if (value == null) return "";
+      if (typeof value === "string") return value;
+      return JSON.stringify(value);
+    }
+
+    async function loadTrace() {
+      const id = ($("trace-id").value || session.rideId || "").trim();
+      $("trace-id").value = id;
+      const body = $("trace-table").querySelector("tbody");
+      body.replaceChildren();
+      if (!id) {
+        $("trace-status").textContent = "Request a ride first, or paste a ride id.";
+        return;
+      }
+      try {
+        const data = await api(`/api/ride-requests/${id}`);
+        const hops = data.hops || [];
+        $("trace-status").textContent = `${data.ride.status} · ${hops.length} hops`;
+        for (const hop of hops) {
+          const row = document.createElement("tr");
+          for (const value of [hop.service, hop.mechanism, hop.store, evidenceText(hop.detail)]) {
+            const cell = document.createElement("td");
+            cell.textContent = value;
+            row.appendChild(cell);
+          }
+          body.appendChild(row);
+        }
+      } catch (e) {
+        $("trace-status").textContent = e.message;
+      }
+    }
+
+    async function loadRing() {
+      let lat = Number($("ring-lat").value);
+      let lng = Number($("ring-lng").value);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || ($("ring-lat").value === "" && $("ring-lng").value === "")) {
+        const pos = await locate();
+        if (!pos) {
+          $("ring-status").textContent = "Location is off. Enter a latitude and longitude.";
+          return;
+        }
+        lat = pos.lat;
+        lng = pos.lng;
+        $("ring-lat").value = lat.toFixed(6);
+        $("ring-lng").value = lng.toFixed(6);
+      }
+      try {
+        const zones = await api(`/api/zones?lat=${lat}&lng=${lng}&k=3`);
+        const preview = await api("/api/ring/preview", {
+          method: "POST",
+          body: { nodes: ["p0", "p1", "p2", "p3", "p4"], zones: zones.zones },
+        });
+        const fraction = Math.round(preview.moved_fraction * 100);
+        $("ring-status").textContent = `${preview.moved.length} cells would move to p4. ${preview.stayed.length} would stay.`;
+        $("ring-summary").textContent = `moved_fraction ${fraction}% · live owners are unchanged`;
+        const body = $("ring-table").querySelector("tbody");
+        body.replaceChildren();
+        for (const zone of zones.zones) {
+          const row = document.createElement("tr");
+          const moved = preview.moved.includes(zone);
+          for (const value of [zone, preview.before[zone] || "", preview.after[zone] || "", moved ? "moved" : "stayed"]) {
+            const cell = document.createElement("td");
+            cell.textContent = value;
+            row.appendChild(cell);
+          }
+          body.appendChild(row);
+        }
+      } catch (e) {
+        $("ring-status").textContent = e.message;
+      }
+    }
+
+    async function refreshChecklist() {
+      const lat = $("ring-lat").value;
+      const lng = $("ring-lng").value;
+      const query = lat !== "" && lng !== "" ? `?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}` : "";
+      try {
+        const data = await api(`/api/checklist${query}`);
+        const body = $("check-table").querySelector("tbody");
+        body.replaceChildren();
+        const proven = data.rows.filter((row) => row.status === "proven").length;
+        $("check-status").textContent = `${proven} proven · refreshes every 5 seconds`;
+        for (const row of data.rows) {
+          const tr = document.createElement("tr");
+          const title = document.createElement("td");
+          title.textContent = row.title;
+          const status = document.createElement("td");
+          const pill = document.createElement("span");
+          pill.className = `pill ${row.status}`;
+          pill.textContent = row.status;
+          status.appendChild(pill);
+          const evidence = document.createElement("td");
+          evidence.className = "mono";
+          evidence.textContent = evidenceText(row.evidence);
+          tr.append(title, status, evidence);
+          body.appendChild(tr);
+        }
+      } catch (e) {
+        $("check-status").textContent = e.message;
+      }
+    }
+
+    let evidenceTimer = null;
+
+    function openPage(page) {
+      if (evidenceTimer) {
+        clearInterval(evidenceTimer);
+        evidenceTimer = null;
+      }
+      if (page === "ride") {
+        hideEvidence();
+        show(session.role);
+        return;
+      }
+      $("gate").hidden = true;
+      $("rider-app").hidden = true;
+      $("driver-app").hidden = true;
+      $("trace-app").hidden = page !== "trace";
+      $("ring-app").hidden = page !== "ring";
+      $("check-app").hidden = page !== "checklist";
+      $("switch-role").hidden = false;
+      if (page === "trace") {
+        if (!$("trace-id").value && session.rideId) $("trace-id").value = session.rideId;
+        loadTrace();
+      }
+      if (page === "ring") loadRing();
+      if (page === "checklist") {
+        refreshChecklist();
+        evidenceTimer = setInterval(() => { refreshChecklist().catch((e) => console.warn(e)); }, 5000);
+      }
+    }
+
     function show(role) {
+      hideEvidence();
       clearTimers();
       if (watchId != null && navigator.geolocation) {
         navigator.geolocation.clearWatch(watchId);
@@ -1192,8 +1446,18 @@
       e.preventDefault();
       online = false;
       sessionStorage.removeItem("metered-online");
-      show("");
+      session.role = "";
+      sessionStorage.removeItem("metered-role");
+      openPage("ride");
     };
+    document.querySelectorAll("[data-page]").forEach((link) => {
+      link.onclick = (e) => {
+        e.preventDefault();
+        openPage(link.dataset.page);
+      };
+    });
+    $("btn-trace").onclick = () => { loadTrace().catch((e) => { $("trace-status").textContent = e.message; }); };
+    $("btn-ring").onclick = () => { loadRing().catch((e) => { $("ring-status").textContent = e.message; }); };
 
     wireSearch("pickup-q", "pickup-suggest", async (lat, lng) => {
       points.pickup = { lat, lng };

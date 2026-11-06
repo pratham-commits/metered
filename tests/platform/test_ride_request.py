@@ -95,6 +95,23 @@ def test_ride_request_rejects_impossible_coordinates(apps):
     assert response.status_code == 422
 
 
+def test_hop_coverage_needs_every_mechanism_and_store(apps):
+    module = apps["ride-request"]
+    covered = module.hop_coverage([
+        ("REST", "SQL"),
+        ("QUEUE", "NONE"),
+        ("GRPC", "NOSQL"),
+        ("EVENT", "NONE"),
+    ])
+    assert all(covered[name] for name in module.HOP_REQUIREMENTS)
+    partial = module.hop_coverage([("REST", "SQL")])
+    assert partial["REST"] and partial["SQL"]
+    assert not partial["QUEUE"]
+    assert not partial["GRPC"]
+    assert module.replicas_above_minimum({"ride-request": 3, "matching": 4})
+    assert not module.replicas_above_minimum({"ride-request": 2, "matching": 6})
+
+
 def test_public_config_names_the_graph_without_a_secret_token_shape(apps):
     body = TestClient(apps["ride-request"].app).get("/api/config").json()
     assert body["h3_resolution"] == 8

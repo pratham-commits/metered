@@ -1,5 +1,6 @@
 import json
 import os
+import ssl
 import uuid
 import urllib.error
 import urllib.parse
@@ -569,6 +570,10 @@ def create_ride(body: RideIn):
             "NONE",
             {"action": "RIDE_REQUESTED", "kafka": published},
         )
+        log.info(
+            "ride created",
+            extra={"event": "ride_created", "ride_id": ride_id},
+        )
         return ride_row(conn, ride_id)
 
 
@@ -672,15 +677,116 @@ def api_conflict(
     }
 
 
+HOP_REQUIREMENTS = ("REST", "SQL", "QUEUE", "GRPC", "NOSQL", "EVENT")
+
+
+def hop_coverage(hops: list[tuple[str, str]]) -> dict[str, bool]:
+    return {
+        "REST": any(mechanism == "REST" for mechanism, _store in hops),
+        "SQL": any(store == "SQL" for _mechanism, store in hops),
+        "QUEUE": any(mechanism == "QUEUE" for mechanism, _store in hops),
+        "GRPC": any(mechanism == "GRPC" for mechanism, _store in hops),
+        "NOSQL": any(store == "NOSQL" for _mechanism, store in hops),
+        "EVENT": any(mechanism == "EVENT" for mechanism, _store in hops),
+    }
+
+
+def replicas_above_minimum(counts: dict[str, int]) -> bool:
+    return counts.get("ride-request", 0) > 2 and counts.get("matching", 0) > 2
+
+
+def read_hpa_replicas() -> dict[str, int] | str:
+    token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    if not os.path.isfile(token_path):
+        return "not running in the cluster"
+    namespace_path = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+    namespace = "rideshare"
+    if os.path.isfile(namespace_path):
+        namespace = Path(namespace_path).read_text(encoding="utf-8").strip() or namespace
+    token = Path(token_path).read_text(encoding="utf-8").strip()
+    url = (
+        "https://kubernetes.default.svc/apis/autoscaling/v2/namespaces/"
+        f"{namespace}/horizontalpodautoscalers"
+    )
+    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    context = ssl.create_default_context(
+        cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5, context=context) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return str(getattr(exc, "reason", exc))
+    counts: dict[str, int] = {}
+    for item in body.get("items", []):
+        name = item.get("metadata", {}).get("name", "")
+        if name not in ("ride-request", "matching"):
+            continue
+        counts[name] = int(item.get("status", {}).get("currentReplicas") or 0)
+    return counts
+
+
+def latest_completed_coverage() -> dict:
+    with connection() as conn:
+        row = conn.execute(
+            """
+            SELECT id::text FROM ride_requests
+            WHERE status = 'COMPLETED'
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        if row is None:
+            return {"ride_id": None, "missing": ["no completed ride"], "present": {}}
+        hops = conn.execute(
+            "SELECT mechanism, store FROM ride_hops WHERE ride_id = %s",
+            (row[0],),
+        ).fetchall()
+    present = hop_coverage([(hop[0], hop[1]) for hop in hops])
+    missing = [name for name in HOP_REQUIREMENTS if not present.get(name)]
+    return {"ride_id": row[0], "missing": missing, "present": present}
+
+
+def ring_sample(lat: float | None, lng: float | None) -> tuple[float, float] | None:
+    if lat is not None and lng is not None:
+        return lat, lng
+    with connection() as conn:
+        row = conn.execute(
+            """
+            SELECT pickup_lat, pickup_lng FROM ride_requests
+            WHERE pickup_lat IS NOT NULL AND pickup_lng IS NOT NULL
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    if row is None or row[0] is None or row[1] is None:
+        return None
+    return float(row[0]), float(row[1])
+
+
+def ring_proof(lat: float, lng: float) -> dict:
+    zones = cells_around(lat, lng, 3)
+    before = live_ring().ownership(zones)
+    after = HashRing(["p0", "p1", "p2", "p3", "p4"]).ownership(zones)
+    stayed = [zone for zone in zones if before.get(zone) == after.get(zone)]
+    moved = [zone for zone in zones if before.get(zone) != after.get(zone)]
+    total = len(zones) or 1
+    return {
+        "lat": lat,
+        "lng": lng,
+        "stayed": len(stayed),
+        "moved": len(moved),
+        "moved_fraction": len(moved) / total,
+    }
+
+
 @app.get("/api/checklist")
-def api_checklist():
+def api_checklist(lat: float | None = None, lng: float | None = None):
     targets = {
         "rider": f"{RIDER_URL}/healthz",
         "driver": f"{DRIVER_HTTP}/healthz",
         "matching": "http://matching.rideshare.svc.cluster.local:8004/healthz",
         "dispatch": "http://dispatch.rideshare.svc.cluster.local:8005/healthz",
-        "trip": f"{TRIP_URL}/healthz",
-        "sink": "http://demand-sink.rideshare.svc.cluster.local:8010/healthz",
     }
     health = {}
     for name, url in targets.items():
@@ -690,14 +796,50 @@ def api_checklist():
         except HTTPException:
             health[name] = "down"
 
+    try:
+        hops = latest_completed_coverage()
+    except Exception as exc:
+        hops = {"ride_id": None, "missing": [str(exc)], "present": {}}
+    try:
+        sample = ring_sample(lat, lng)
+        ring = ring_proof(*sample) if sample else {"missing": "no ride coordinates yet"}
+    except Exception as exc:
+        ring = {"missing": str(exc)}
+    replicas = read_hpa_replicas()
+
     rows = [
-        {"id": "health", "title": "Service health", "status": "proven" if all(v == "ok" for v in health.values()) else "todo", "evidence": health},
+        {
+            "id": "health",
+            "title": "Service health",
+            "status": "proven" if health and all(v == "ok" for v in health.values()) else "todo",
+            "evidence": health,
+        },
+        {
+            "id": "hops",
+            "title": "Completed ride with every hop",
+            "status": "proven" if hops.get("ride_id") and not hops.get("missing") else "todo",
+            "evidence": hops,
+        },
+        {
+            "id": "ring",
+            "title": "Ring preview stayed cells",
+            "status": "proven" if isinstance(ring, dict) and ring.get("stayed", 0) > 0 else "todo",
+            "evidence": ring,
+        },
+        {
+            "id": "hpa",
+            "title": "HPA replicas > 2 under k6",
+            "status": "proven" if isinstance(replicas, dict) and replicas_above_minimum(replicas) else "todo",
+            "evidence": replicas,
+        },
         {"id": "terraform", "title": "Terraform platform", "status": "show", "evidence": "terraform -chdir=infra/platform state list"},
-        {"id": "argocd", "title": "Argo CD GitOps", "status": "show", "evidence": "kubectl -n argocd get app"},
-        {"id": "grafana", "title": "Grafana dashboards", "status": "show", "evidence": "kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80"},
-        {"id": "logging", "title": "Cloud Logging", "status": "show", "evidence": 'resource.type="k8s_container"'},
-        {"id": "hpa", "title": "HPA replicas > 2 under k6", "status": "todo", "evidence": "open checklist while k6 runs"},
-        {"id": "ring", "title": "Ring preview stayed cells", "status": "todo", "evidence": "use /api/ring/preview"},
-        {"id": "demand", "title": "Demand window < 15m", "status": "todo", "evidence": "Person 3 Flink + sink"},
+        {"id": "argocd", "title": "Argo CD GitOps", "status": "show", "evidence": "kubectl -n argocd get applications"},
+        {"id": "grafana", "title": "Grafana dashboards", "status": "show", "evidence": "http://127.0.0.1:3000 dashboard Ride Sharing"},
+        {
+            "id": "logging",
+            "title": "Cloud Logging",
+            "status": "show",
+            "evidence": 'resource.type="k8s_container" resource.labels.namespace_name="rideshare" jsonPayload.ride_id="RIDE_ID"',
+        },
     ]
     return {"rows": rows, "health": health}

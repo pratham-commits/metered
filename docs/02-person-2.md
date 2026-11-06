@@ -2,7 +2,8 @@
 
 You own letters **c**, **f** and **h**, plus Ride Request, Matching, Dispatch and
 the public web application. You also own the HPAs, the k6 test, the ring page,
-the demand page, and the Prometheus/Grafana/Cloud Logging evidence.
+and the Prometheus/Grafana/Cloud Logging evidence. The demand page belongs to
+Person 3.
 
 Person 1 has already migrated the platform to GCP and implemented Rider,
 Driver and the shared library. Person 2 builds on top of that.
@@ -41,7 +42,6 @@ POST /api/ride-requests      create a ride
 GET  /api/ride-requests/{id} ride + ride_hops
 POST /api/trips/{ride_id}/progress
                              proxy to TRIP_URL
-GET  /api/demand             proxy to TRIP_URL/demand
 GET  /api/ring?lat=&lng=&k=3 live ring ownership for the sample cells
 POST /api/ring/preview       before/after for {nodes, zones}
 POST /api/demo/conflict      requires X-Demo-Token
@@ -141,8 +141,9 @@ idempotent for the same `ride_id`.
 
 ## 5. Public UI
 
-The page has six sections: Rider, Driver, Trace, Ring, Demand, Checklist. It
-talks only to its own origin under `/api/*`.
+The page has five sections: Rider, Driver, Trace, Ring, Checklist. It
+talks only to its own origin under `/api/*`. There is no Demand section.
+Person 3 serves that page from Trip Tracking.
 
 ### Live location
 
@@ -177,7 +178,6 @@ only from live data:
 - health checks green
 - a completed ride with every hop
 - a ring preview with at least one stayed cell
-- a demand window newer than 15 minutes
 - Ride Request and Matching replicas above 2 while k6 runs
 
 Terraform, Argo CD, Grafana and Cloud Logging are `show` rows with the exact
