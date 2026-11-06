@@ -17,11 +17,18 @@ def apps(tmp_path_factory):
                     str(ROOT/'proto/ride/v1/driver.proto'), str(ROOT/'proto/ride/v1/dispatch.proto')], check=True)
     sys.path.insert(0, str(output))
     result = {}
-    for service in ['rider', 'driver']:
-        spec = importlib.util.spec_from_file_location(service+'_app', ROOT/f'services/{service}/app.py')
+    for service in ['rider', 'driver', 'matching', 'dispatch', 'ride-request']:
+        previous_name = os.environ.get("SERVICE_NAME")
+        spec = importlib.util.spec_from_file_location(
+            service.replace('-', '_') + '_app', ROOT / f'services/{service}/app.py'
+        )
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         result[service] = module
+        if previous_name is None:
+            os.environ.pop("SERVICE_NAME", None)
+        else:
+            os.environ["SERVICE_NAME"] = previous_name
     return result
 
 @pytest.fixture
