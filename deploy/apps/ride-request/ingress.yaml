@@ -1,7 +1,41 @@
-# Person 2. Internet-facing GKE Ingress for the public URL.
-# Use kubernetes.io/ingress.class: gke (or the default GKE class).
-# Reserve a global static IP and set:
-#   kubernetes.io/ingress.global-static-ip-name: rideshare-ip
-# Path / prefix to Service ride-request port 8003 in namespace rideshare.
-# Add a ManagedCertificate and an HTTPS frontend because browser geolocation
-# requires HTTPS (except on localhost).
+# Point spec.domains at the DNS name for the reserved global IP rideshare-ip
+# before the public demo. Browser geolocation needs this certificate Active.
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: rideshare-cert
+  namespace: rideshare
+spec:
+  domains:
+    - replace-me.example.com
+---
+apiVersion: networking.gke.io/v1beta1
+kind: FrontendConfig
+metadata:
+  name: rideshare-https
+  namespace: rideshare
+spec:
+  redirectToHttps:
+    enabled: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ride-request
+  namespace: rideshare
+  annotations:
+    kubernetes.io/ingress.class: gke
+    kubernetes.io/ingress.global-static-ip-name: rideshare-ip
+    networking.gke.io/managed-certificates: rideshare-cert
+    networking.gke.io/v1beta1.FrontendConfig: rideshare-https
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ride-request
+                port:
+                  number: 8003
