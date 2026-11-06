@@ -1,3 +1,19 @@
-# Person 2. Letter c. HorizontalPodAutoscaler matching.
-# Same spec as ride-request: min 2, max 6, CPU 60 percent.
-# The load-test proof is both this replica count and ride-request above 2.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: matching
+  namespace: rideshare
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: matching
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60

@@ -1,6 +1,84 @@
-# Person 2. Deployment, Service, and ServiceAccount named matching.
-# Port http 8004. 2 replicas. No Ingress.
-# ServiceAccount annotation:
-#   iam.gke.io/gcp-service-account: rideshare-matching@metered-513804.iam.gserviceaccount.com
-# Mount rideshare-kafka-cluster-ca-cert at /etc/kafka for Kafka TLS.
-# Same resources, probes, envFrom, and non-root user as the other apps.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: matching
+  namespace: rideshare
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: matching
+  template:
+    metadata:
+      labels:
+        app: matching
+      annotations:
+        rideshare.io/config-version: "1"
+    spec:
+      serviceAccountName: matching
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      containers:
+        - name: matching
+          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/matching:REPLACE_SHA
+          ports:
+            - name: http
+              containerPort: 8004
+          envFrom:
+            - secretRef:
+                name: rideshare-secret
+            - configMapRef:
+                name: rideshare-config
+          env:
+            - name: SERVICE_NAME
+              value: matching
+          volumeMounts:
+            - name: kafka-ca
+              mountPath: /etc/kafka
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8004
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8004
+            initialDelaySeconds: 10
+      volumes:
+        - name: kafka-ca
+          secret:
+            secretName: rideshare-kafka-cluster-ca-cert
+            items:
+              - key: ca.crt
+                path: ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: matching
+  namespace: rideshare
+spec:
+  selector:
+    app: matching
+  ports:
+    - name: http
+      port: 8004
+      targetPort: 8004
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: matching
+  namespace: rideshare
+  annotations:
+    iam.gke.io/gcp-service-account: rideshare-matching@metered-513804.iam.gserviceaccount.com
