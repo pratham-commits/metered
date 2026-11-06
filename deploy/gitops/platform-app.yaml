@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/pratham-commits/metered.git
-    targetRevision: gcp-migration
+    targetRevision: main
     path: deploy/platform
     directory:
       recurse: true
