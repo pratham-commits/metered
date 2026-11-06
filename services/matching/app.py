@@ -99,8 +99,7 @@ def handle_job(job: dict) -> None:
             },
         )
 
-    # Nearby drivers are offered the ride. Assign happens when one of them accepts.
-    status = "REQUESTED" if merged else "NO_DRIVER"
+    # The ride stays open until a driver accepts, even if nobody is online yet.
     with connection() as conn:
         record_hop(
             conn,
@@ -108,7 +107,7 @@ def handle_job(job: dict) -> None:
             "matching",
             "EVENT",
             "SQL",
-            {"action": "offer", "candidate_count": len(merged), "status": status},
+            {"action": "offer", "candidate_count": len(merged), "status": "REQUESTED"},
         )
         conn.execute(
             """
@@ -116,7 +115,7 @@ def handle_job(job: dict) -> None:
             SET status = %s, updated_at = now()
             WHERE id = %s AND status = 'REQUESTED'
             """,
-            (status, ride_id),
+            ("REQUESTED", ride_id),
         )
 
 

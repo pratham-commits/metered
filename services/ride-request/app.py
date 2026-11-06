@@ -284,7 +284,7 @@ def api_driver_offer(driver_id: UUID):
             """
             SELECT id::text FROM ride_requests
             WHERE assigned_driver_id = %s
-              AND status IN ('ACCEPTED', 'IN_PROGRESS', 'ASSIGNED')
+              AND status IN ('ACCEPTED', 'IN_PROGRESS')
             ORDER BY updated_at DESC
             LIMIT 1
             """,
@@ -295,10 +295,27 @@ def api_driver_offer(driver_id: UUID):
         return {"ride": ride_row(conn, row[0])}
 
 
+@app.get("/api/drivers/{driver_id}/location")
+def api_driver_location(driver_id: UUID):
+    """Live pin for the driver on this ride, including after they leave the pickup cells."""
+    partitions = nodes_from_env(os.environ.get("HASH_NODES", DEFAULT_PARTITIONS))
+    item = get_store().find_driver(str(driver_id), partitions) or {}
+    if item.get("lat") is None or item.get("lng") is None:
+        return {"driver": None}
+    return {
+        "driver": {
+            "driver_id": item.get("driver_id"),
+            "lat": item.get("lat"),
+            "lng": item.get("lng"),
+            "status": item.get("status"),
+        }
+    }
+
+
 @app.get("/api/open-rides")
 def api_open_rides(lat: float, lng: float):
     """Requested rides near this driver, waiting for someone to accept."""
-    zones = cells_around(lat, lng, 1)
+    zones = cells_around(lat, lng, 3)
     with connection() as conn:
         rows = conn.execute(
             """

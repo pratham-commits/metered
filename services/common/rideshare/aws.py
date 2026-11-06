@@ -186,6 +186,42 @@ class Store:
                 raise
         return False
 
+    def find_driver(self, driver_id: str, partitions: list[str]) -> dict | None:
+        for partition_id in partitions:
+            resp = self.ddb.get_item(
+                TableName=self.driver_table,
+                Key={"partition_id": {"S": partition_id}, "driver_id": {"S": driver_id}},
+                ConsistentRead=True,
+            )
+            item = resp.get("Item")
+            if item:
+                return _driver(item)
+        return None
+
+    def release_assigned(self, driver_id: str, partitions: list[str]) -> bool:
+        released = False
+        for partition_id in partitions:
+            try:
+                self.ddb.update_item(
+                    TableName=self.driver_table,
+                    Key={"partition_id": {"S": partition_id}, "driver_id": {"S": driver_id}},
+                    UpdateExpression="SET #s = :available, assigned_ride_id = :empty, updated_at = :now",
+                    ConditionExpression="#s = :assigned",
+                    ExpressionAttributeNames={"#s": "status"},
+                    ExpressionAttributeValues={
+                        ":available": {"S": "AVAILABLE"},
+                        ":empty": {"S": ""},
+                        ":now": {"S": _now()},
+                        ":assigned": {"S": "ASSIGNED"},
+                    },
+                )
+                released = True
+            except ClientError as exc:
+                if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                    continue
+                raise
+        return released
+
     def release(self, partition_id: str, driver_id: str) -> None:
         self.ddb.update_item(
             TableName=self.driver_table,

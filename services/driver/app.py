@@ -140,10 +140,33 @@ def presence(driver_id: UUID, body: PresenceIn):
                 }, configured_partitions()
             )
         except ValueError as exc:
-            if body.status == "ONLINE" and store.update_location(
-                driver_id, body.lat, body.lng, zone, configured_partitions()
-            ):
+            if body.status != "ONLINE":
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            active = conn.execute(
+                """
+                SELECT 1 FROM ride_requests
+                WHERE assigned_driver_id = %s AND status IN ('ACCEPTED', 'IN_PROGRESS')
+                LIMIT 1
+                """,
+                (driver_id,),
+            ).fetchone()
+            partitions = configured_partitions()
+            if active and store.update_location(driver_id, body.lat, body.lng, zone, partitions):
                 status = "ASSIGNED"
+            elif not active and store.release_assigned(driver_id, partitions):
+                store.set_presence(
+                    {
+                        "partition_id": partition_id,
+                        "driver_id": driver_id,
+                        "status": "AVAILABLE",
+                        "zone": zone,
+                        "lat": body.lat,
+                        "lng": body.lng,
+                        "updated_at": now,
+                        "assigned_ride_id": "",
+                    },
+                    partitions,
+                )
             else:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
     published = store.publish(

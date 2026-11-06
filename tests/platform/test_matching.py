@@ -120,7 +120,7 @@ def test_no_driver_does_not_publish_assignment(apps, monkeypatch):
 
     update = conn.execute.call_args_list[-1]
     assert "status = %s" in update.args[0]
-    assert update.args[1][0] == "NO_DRIVER"
+    assert update.args[1][0] == "REQUESTED"
     assign.Assign.assert_not_called()
     store.publish.assert_not_called()
 

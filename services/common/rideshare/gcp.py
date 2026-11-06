@@ -154,6 +154,27 @@ class Store:
             return True
         return False
 
+    def find_driver(self, driver_id: str, partitions: list[str]) -> dict | None:
+        for partition_id in partitions:
+            snapshot = self._driver_ref(partition_id, driver_id).get()
+            if snapshot.exists:
+                return self._driver(snapshot.to_dict() or {})
+        return None
+
+    def release_assigned(self, driver_id: str, partitions: list[str]) -> bool:
+        """Drop a leftover trip lock so the driver can go online again."""
+        released = False
+        for partition_id in partitions:
+            ref = self._driver_ref(partition_id, driver_id)
+            snapshot = ref.get()
+            if not snapshot.exists:
+                continue
+            if (snapshot.to_dict() or {}).get("status") != "ASSIGNED":
+                continue
+            ref.update({"status": "AVAILABLE", "assigned_ride_id": "", "updated_at": _now()})
+            released = True
+        return released
+
     def release(self, partition_id: str, driver_id: str) -> None:
         self._driver_ref(partition_id, driver_id).update(
             {"status": "AVAILABLE", "assigned_ride_id": "", "updated_at": _now()}
