@@ -33,7 +33,7 @@ locals {
     driver           = concat(local.common_roles, ["roles/datastore.user"])
     matching         = concat(local.common_roles, ["roles/datastore.user", "roles/pubsub.publisher", "roles/pubsub.subscriber"])
     dispatch         = concat(local.common_roles, ["roles/datastore.user", "roles/pubsub.publisher", "roles/pubsub.subscriber"])
-    ride_request     = concat(local.common_roles, ["roles/pubsub.publisher"])
+    ride_request     = concat(local.common_roles, ["roles/pubsub.publisher", "roles/datastore.user"])
     rider            = local.common_roles
     # cloudsql.client + datastore.user also appear in infra/functions; same
     # member/role bindings are idempotent and keep the SA correct before that stack.

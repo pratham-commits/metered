@@ -768,38 +768,69 @@
       map.fitBounds(usable.map((p) => [p.lat, p.lng]), { padding: [48, 48], maxZoom: 15 });
     }
 
+    function showRidePins(ride) {
+      if (!maps.rider || !ride) return;
+      if (ride.pickup_lat != null && ride.pickup_lng != null) {
+        placeMarker(maps.rider, "pickup", ride.pickup_lat, ride.pickup_lng, pinIcon("pickup"));
+      }
+      if (ride.drop_lat != null && ride.drop_lng != null) {
+        placeMarker(maps.rider, "drop", ride.drop_lat, ride.drop_lng, pinIcon("drop"));
+      }
+    }
+
+    async function syncAssignedDriver() {
+      const ride = session.ride;
+      if (!maps.rider || !ride || !ride.assigned_driver_id) return false;
+      const pin = await api(`/api/drivers/${ride.assigned_driver_id}/location`);
+      if (!pin.driver || pin.driver.lat == null || pin.driver.lng == null) return false;
+      assignedPin = { lat: pin.driver.lat, lng: pin.driver.lng };
+      const icon = carIcon(true);
+      const existing = markers.cars.get(ride.assigned_driver_id);
+      if (existing) {
+        existing.setLatLng([pin.driver.lat, pin.driver.lng]);
+        existing.setIcon(icon);
+      } else {
+        markers.cars.set(
+          ride.assigned_driver_id,
+          L.marker([pin.driver.lat, pin.driver.lng], { icon, title: "Driver" }).addTo(maps.rider)
+        );
+      }
+      return true;
+    }
+
     async function refreshCars() {
       if (!points.pickup || !maps.rider) return;
-      const data = await api(`/api/live-drivers?lat=${points.pickup.lat}&lng=${points.pickup.lng}&k=8`);
+      let drivers = [];
+      try {
+        const data = await api(`/api/live-drivers?lat=${points.pickup.lat}&lng=${points.pickup.lng}&k=8`);
+        drivers = data.drivers || [];
+      } catch (_) {}
       const active = session.ride && session.ride.assigned_driver_id;
-      assignedPin = null;
       if (active) {
         try {
           const pin = await api(`/api/drivers/${active}/location`);
           if (pin.driver && pin.driver.lat != null && pin.driver.lng != null) {
             assignedPin = { lat: pin.driver.lat, lng: pin.driver.lng };
-            const list = data.drivers || [];
-            const known = list.find((d) => d.driver_id === active);
+            const known = drivers.find((d) => d.driver_id === active);
             if (known) {
               known.lat = pin.driver.lat;
               known.lng = pin.driver.lng;
             } else {
-              list.push({
+              drivers.push({
                 driver_id: active,
                 lat: pin.driver.lat,
                 lng: pin.driver.lng,
                 name: "Driver",
               });
-              data.drivers = list;
             }
           }
         } catch (_) {}
       }
-      drawCars(maps.rider, data.drivers, active || "");
+      drawCars(maps.rider, drivers, active || "");
       paintRiderRoute();
-      frameRider(data.drivers || []);
-      const n = (data.drivers || []).length;
+      frameRider(drivers);
       if (!session.rideId) {
+        const n = drivers.length;
         $("rider-status").textContent = n
           ? `${n} car${n === 1 ? "" : "s"} nearby. Request when the driver is online.`
           : "No cars nearby yet. In the other tab, choose Driver and go online.";
@@ -882,12 +913,16 @@
       const data = await api(`/api/ride-requests/${session.rideId}`);
       const ride = data.ride || {};
       session.ride = ride;
+      showRidePins(ride);
       $("ride-id").textContent = ride.id || session.rideId;
       $("est-fare").textContent = rupees(ride.estimated_fare_cents);
       const coming = ride.status === "ACCEPTED" || ride.status === "ASSIGNED";
       $("btn-board").hidden = !coming;
       $("btn-finish").hidden = ride.status !== "IN_PROGRESS";
       $("btn-ride").hidden = ride.status && ride.status !== "COMPLETED" && ride.status !== "NO_DRIVER";
+      if (coming || ride.status === "IN_PROGRESS") {
+        try { await syncAssignedDriver(); } catch (_) {}
+      }
       if (ride.status === "COMPLETED") {
         $("rider-status").textContent = "Ride complete.";
         $("btn-ride").hidden = false;
