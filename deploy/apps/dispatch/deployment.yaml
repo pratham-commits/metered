@@ -21,7 +21,7 @@ spec:
         runAsUser: 65532
       containers:
         - name: dispatch
-          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/dispatch:REPLACE_SHA
+          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/dispatch:517ef2c
           ports:
             - name: http
               containerPort: 8005
