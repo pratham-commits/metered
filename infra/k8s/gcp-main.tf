@@ -40,7 +40,8 @@ resource "kubernetes_secret" "monitoring" {
 
   data = {
     admin-user     = "admin"
-    admin-password = local.platform.demo_token
+    # Keep Grafana login simple for the demo (not the random platform demo_token).
+    admin-password = "admin"
   }
 }
 
