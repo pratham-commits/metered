@@ -35,3 +35,7 @@ target/
 *.tfvars
 *.tfplan
 .generated/
+
+# Local/internal docs (submission design + presentation live at repo root)
+docs/
+.diagrams_pkgs/

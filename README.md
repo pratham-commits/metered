@@ -1,64 +1,115 @@
-# Ride Sharing
+# Metered
 
-Cloud Computing assignment. Eight services on **Google Cloud Platform** in
-`asia-south1`. The platform infrastructure and the Rider/Driver services are
-implemented in this contribution. Ride Request, Matching, Dispatch, the public
-UI and observability are Person 2 scaffolds. Trip Tracking, Fare, Demand
-Analytics and the demand sink are Person 3 scaffolds.
+Cloud-native **ride matching** on **Google Cloud Platform** (`asia-south1`, project `metered-513804`).
 
-The AWS baseline is retained in the repository and in the migration guide. It is
-disabled with comments or by the provider-neutral `STORAGE_BACKEND=aws` switch;
-the default is GCP.
+Eight microservices, one public BFF (Ride Request), GitOps with Argo CD, H3 consistent hashing, serverless Fare, and Flink demand analytics on Dataproc.
 
-Start with:
+## Submission files (repo root)
 
-- [Group overview](docs/00-overview.md)
-- [AWS to GCP migration](docs/gcp-migration.md)
-- [Platform runbook](docs/platform-runbook.md)
-- [Person 1 guide](docs/01-person-1.md)
-- [Person 2 guide](docs/02-person-2.md)
-- [Person 3 guide](docs/03-person-3.md)
+| File | What it is |
+|---|---|
+| [`design.md`](design.md) | Full design document (six required parts; **self-contained**, inline Mermaid only) |
+| [`presentation.pdf`](presentation.pdf) | Architecture presentation (19 slides) |
+| [`task_division.txt`](task_division.txt) | Team IDs, services, letters a–h |
+| [`metered-runbook.md`](metered-runbook.md) | Operator runbook (deploy / smoke / teardown) |
+| [`gcp-migration.md`](gcp-migration.md) | AWS → GCP migration notes |
 
 ## Who owns what
 
-| Person | Write these paths | Defends |
-|---|---|---|
-| Person 1 / platform maintainer | `infra/`, `services/common/` except the ring test, `services/rider/`, `services/driver/`, `deploy/apps/migrate/`, `deploy/apps/rider/`, `deploy/apps/driver/`, `deploy/gitops/`, `scripts/`, `docker-compose.yml` | Terraform, GitOps, GCS + Cloud SQL + Firestore |
-| Person 2 | `services/ride-request/`, `services/matching/`, `services/dispatch/`, `services/common/rideshare/hashring.py`, `services/common/tests/`, `proto/`, `deploy/apps/ride-request/`, `deploy/apps/matching/`, `deploy/apps/dispatch/`, `deploy/platform/`, `loadtest/` | GKE scale, HPA, consistent hashing, Prometheus, Grafana, Cloud Logging, the public UI |
-| Person 3 | `services/trip-tracking/`, `services/fare/`, `services/demand-analytics/`, `services/demand-sink/`, `deploy/apps/trip-tracking/`, `deploy/apps/demand-sink/`, `infra/functions/`, `infra/dataproc/` | Cloud Run functions, REST/gRPC/Pub/Sub on the trace, Flink on Dataproc |
-
-`docs/design.md` is the full design document (six required parts + appendices,
-with Mermaid and PNG diagrams). `task_division.txt` lists ownership IDs.
+| Person | ID | Services | Letters |
+|---|---|---|---|
+| Ved Pahune | 2026H1030056P | Rider, Driver (+ Terraform, Argo, stores) | a, d, g |
+| Pratham Shah | 2026H1030063P | Ride Request, Matching, Dispatch (+ UI, HPA, hashing, observability) | c, f, h |
+| Vidhu Kant Sharma | 2026H1030053P | Trip Tracking, Fare, Demand Analytics | b, e |
 
 ## Layout
 
 ```text
-infra/bootstrap     GCS state bucket and project API enablement
+design.md / presentation.pdf / task_division.txt / metered-runbook.md / gcp-migration.md
+infra/bootstrap     GCS state bucket and project APIs
 infra/platform      VPC, GKE, Cloud SQL, Firestore, GCS, Pub/Sub, Artifact Registry, IAM
 infra/k8s           namespaces, secrets, config, Argo CD, Strimzi, Kafka topics
-infra/functions     Fare Cloud Run functions and the Eventarc trigger
-infra/dataproc      Flink cluster, created only for the demo
-services/           one directory per service, plus the shared rideshare package
+infra/functions     Fare Cloud Run functions + Eventarc
+infra/dataproc      Flink cluster (demo window)
+services/           one directory per service + shared rideshare package
 proto/ride/v1       gRPC contracts
-deploy/apps         service manifests, synced by Argo CD
-deploy/gitops       the two Argo CD Application pointers
-deploy/platform     Person 2 Prometheus/Grafana stubs (*.yaml.stub); logs go to Cloud Logging
-loadtest/k6         the scale test
-scripts/push.sh     build and push one image by git SHA
+deploy/apps         service manifests (Argo CD)
+deploy/gitops       Argo CD Applications
+loadtest/k6         HPA load test + results/
+scripts/            push, configure, run-flink, smoke helpers
 ```
 
-Images are published with `scripts/push.sh`. The printed tags are written into
-the manifests with `scripts/configure.py`; Argo CD rolls the pods. `kubectl
-apply` is not the deploy path for a service.
+## Steps — from zero to live
 
-## Order
+Replace `PROJECT_ID` with `metered-513804` (or your project). Region `asia-south1`, zone `asia-south1-a`.
 
-The platform maintainer applies `infra/bootstrap`, then `infra/platform`, then
-`infra/k8s`. Person 2 and Person 3 implement against the comments in their
-directories. `infra/functions` builds its own source zip from the Fare source and stays
-disabled until `estimate` and `finalize` exist;
-`scripts/build-fare.sh` is optional inspection. `infra/dataproc` is applied on
-the demo day and destroyed the same day.
+### 1. Prerequisites
+
+```bash
+gcloud auth login
+gcloud auth application-default login
+gcloud config set project PROJECT_ID
+brew install --cask google-cloud-sdk
+brew install terraform kubectl helm jq
+```
+
+### 2. Configure placeholders
+
+```bash
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python -r requirements-dev.txt
+.venv/bin/python scripts/configure.py --project-id PROJECT_ID
+```
+
+### 3. Apply Terraform (foundation)
+
+```bash
+terraform -chdir=infra/bootstrap init && terraform -chdir=infra/bootstrap apply -auto-approve
+terraform -chdir=infra/platform init && terraform -chdir=infra/platform apply -auto-approve -var="project_id=PROJECT_ID"
+terraform -chdir=infra/k8s init && terraform -chdir=infra/k8s apply -auto-approve \
+  -var="github_repo=https://github.com/pratham-commits/metered.git"
+```
+
+### 4. Build and push images (git SHA tags)
+
+```bash
+SHA=$(git rev-parse --short HEAD)
+# build/push each service image to Artifact Registry, then pin tags in deploy/apps
+# (see metered-runbook.md / scripts/push.sh)
+```
+
+### 5. GitOps
+
+Push manifests to `main`. Argo CD syncs Deployments — do **not** `kubectl set image` for normal deploys.
+
+### 6. Fare functions (letter b)
+
+```bash
+terraform -chdir=infra/functions init && terraform -chdir=infra/functions apply -auto-approve -var="project_id=PROJECT_ID"
+```
+
+### 7. Dataproc + Flink (letter e) — demo window only
+
+```bash
+# upload Kafka truststore + JAR, then:
+terraform -chdir=infra/dataproc apply -auto-approve -var="project_id=PROJECT_ID"
+./scripts/run-flink.sh
+# Destroy after the presentation — do not leave Dataproc up.
+```
+
+### 8. Prove the system
+
+1. Open the **Ride Request** Ingress URL — create rider, online driver, request, accept, board, finish.  
+2. Open **Trace** / **Checklist** — hops and letters.  
+3. Confirm **final fare** after GCS completion → Eventarc.  
+4. Open **Demand** page — Flink windows.  
+5. Open **Grafana** / **Prometheus** — metrics (letter h).  
+6. Open **Argo CD** — Synced / Healthy (letter d).  
+7. Optional: `loadtest/k6` — HPA scale-out (letter c).
+
+Exact operator commands, smoke checks, and teardown: **[`metered-runbook.md`](metered-runbook.md)**.  
+Architecture and rationale: **[`design.md`](design.md)**.  
+Slide deck: **[`presentation.pdf`](presentation.pdf)**.
 
 ## Local checks
 
@@ -69,6 +120,8 @@ uv pip install --python .venv/bin/python -r requirements-dev.txt
 scripts/check-platform.sh
 ```
 
-The AWS tests are preserved and run with Moto. GCP adapter tests run with
-mocked Google clients so no credentials are required. Docker Compose starts
-GCP emulators for local development.
+## Notes
+
+- Default storage backend is GCP (`STORAGE_BACKEND=gcp`). AWS baseline remains in-repo for comparison only.  
+- Images are tagged with a **git SHA** and rolled by **Argo CD**.  
+- After the viva, destroy **Dataproc** first, then tear down Terraform when the course allows.

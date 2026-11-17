@@ -4,9 +4,9 @@
 **Cloud:** Google Cloud Platform · **Region:** `asia-south1` · **Project:** `metered-513804`  
 **Repo:** https://github.com/pratham-commits/metered  
 **Team:** Ved Pahune (`2026H1030056P`) · Pratham Shah (`2026H1030063P`) · Vidhu Kant Sharma (`2026H1030053P`)  
-**Ownership file:** [`task_division.txt`](../task_division.txt)
+**Ownership file:** [`task_division.txt`](task_division.txt)
 
-This document is the submission design write-up. It is organized as the **six required parts**, then appendices (data model, reliability, security, observability, operations). Diagram sources also live under [`docs/diagrams/`](diagrams/) and in [`Metered-Cloud-Architecture.pptx`](Metered-Cloud-Architecture.pptx).
+This document is the submission design write-up. It is organized as the **six required parts**, then appendices (data model, reliability, security, observability, operations). All diagrams are **inline Mermaid** — this file is self-contained and does not depend on external image files.
 
 ---
 
@@ -161,10 +161,6 @@ sequenceDiagram
 
 ## 2.1 High-level GCP architecture
 
-![Full system architecture](diagrams/full_system.png)
-
-*Figure 1 — Metered on Google Cloud (`asia-south1`). Full-resolution source: `docs/diagrams/full_system.png`.*
-
 ```mermaid
 flowchart TB
   subgraph public[Public edge]
@@ -294,21 +290,43 @@ Normal service deploys do **not** use `kubectl set image`. Argo CD watches git a
 
 ### Ved — platform + identity
 
-![Ved architecture](diagrams/person1.png)
-
-*Figure 2 — Terraform, Rider/Driver, three stores, Argo CD.*
+```mermaid
+flowchart LR
+  tf[Terraform stacks] --> vpc[VPC + GKE]
+  tf --> sql[(Cloud SQL)]
+  tf --> fs[(Firestore)]
+  tf --> gcs[(GCS)]
+  tf --> argo[Argo CD]
+  rider[Rider] --> sql
+  driver[Driver] --> sql
+  driver --> fs
+```
 
 ### Pratham — interactive path
 
-![Pratham architecture](diagrams/person2.png)
-
-*Figure 3 — BFF, Pub/Sub matching, gRPC dispatch, hashing, observability.*
+```mermaid
+flowchart LR
+  browser[Browser] --> rr[Ride Request BFF]
+  rr --> ps[Pub/Sub]
+  ps --> match[Matching]
+  match --> ring[H3 hash ring p0-p3]
+  rr -->|gRPC Assign| disp[Dispatch]
+  disp --> fs[(Firestore lock)]
+  rr --> prom[Prometheus / Grafana / Logging]
+```
 
 ### Vidhu — completion + analytics
 
-![Vidhu architecture](diagrams/person3.png)
-
-*Figure 4 — Trip → GCS → Fare; Kafka → Flink → demand.*
+```mermaid
+flowchart LR
+  trip[Trip Tracking] --> gcs[GCS completions]
+  gcs -->|Eventarc| fare[Fare finalize]
+  fare --> sql[(Cloud SQL final_fare)]
+  kafka[Kafka ride-events] --> flink[Flink on Dataproc]
+  flink --> results[demand-results]
+  results --> sink[Demand sink]
+  sink --> fs[(Firestore demand windows)]
+```
 
 ## 3.3 Ports and process model
 
@@ -349,10 +367,6 @@ Letter **b** requires a serverless component **and** a path that uses REST, gRPC
 | **NoSQL** | Live drivers + demand windows | Firestore |
 | **Object** | `gps/{ride_id}/…`, `completions/{ride_id}.json` | GCS |
 
-![Communication mechanisms on one ride](diagrams/comms.png)
-
-*Figure 5 — REST, gRPC, and queues on one ride path.*
-
 ## 4.2 Why Pub/Sub and Kafka both exist
 
 | Bus | Semantics | Why |
@@ -381,10 +395,6 @@ There is **no fixed city bounding box**.
 Fare **distance** uses raw pickup/drop coordinates. H3 is for **partitioning and demand**, not for pricing geometry.
 
 ## 5.2 Consistent hash ring
-
-![Consistent hashing](diagrams/hashing.png)
-
-*Figure 6 — H3 cells on ring partitions `p0…p3`.*
 
 ```mermaid
 flowchart LR
@@ -551,7 +561,7 @@ Standing cost is dominated by GKE nodes, Cloud SQL, NAT, and Kafka brokers. Clou
 | Argo CD LB | GitOps sync state |
 | Prometheus LB | Raw scrape / targets |
 
-Exact IPs and logins for the current deployment are maintained in [`docs/teammates/03-ui-and-demo.md`](teammates/03-ui-and-demo.md).
+Exact IPs and logins for the current deployment are maintained in [`metered-runbook.md`](metered-runbook.md) and the live Ingress / LoadBalancer URLs.
 
 ---
 
@@ -578,4 +588,4 @@ Exact IPs and logins for the current deployment are maintained in [`docs/teammat
 | Pratham Shah | 2026H1030063P | Ride Request, Matching, Dispatch (+ UI, HPA, hashing, observability) | c, f, h |
 | Vidhu Kant Sharma | 2026H1030053P | Trip Tracking, Fare, Demand Analytics | b, e |
 
-The enrolled group has **three** members. The brief’s “two services each” line assumes four; the service split is **3 / 3 / 2** so every service and every letter still has a single owner. See [`task_division.txt`](../task_division.txt).
+The enrolled group has **three** members. The brief’s “two services each” line assumes four; the service split is **3 / 3 / 2** so every service and every letter still has a single owner. See [`task_division.txt`](task_division.txt).

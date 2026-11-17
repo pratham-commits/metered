@@ -1,4 +1,4 @@
-# Platform runbook — GCP
+# Metered — Platform runbook (GCP)
 
 This is the operator runbook. It assumes the repository is checked out at the
 commit you want to deploy and that you have Owner or Editor on the GCP project.

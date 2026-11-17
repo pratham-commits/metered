@@ -1,4 +1,4 @@
-# AWS to GCP migration
+# Metered — AWS to GCP migration
 
 This document is the short, complete version of the migration. The person guides
 contain the copy-paste commands. The AWS resources remain in the repository for
@@ -187,7 +187,7 @@ MATCH_QUEUE_URL
 7. Run the Person 2 implementation and push images.
 8. Run the Person 3 implementation and build the Flink JAR.
 9. Apply `infra/dataproc` only for the stream demo.
-10. Run the full viva script in `docs/00-overview.md`.
+10. Run the full viva script in `README.md`.
 
 ## 9. Legacy AWS preservation
 
