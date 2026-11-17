@@ -68,11 +68,12 @@ metadata:
   name: trip-tracking
   namespace: rideshare
 spec:
+  type: LoadBalancer
   selector:
     app: trip-tracking
   ports:
     - name: http
-      port: 8006
+      port: 80
       targetPort: 8006
 ---
 apiVersion: v1
