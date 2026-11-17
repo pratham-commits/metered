@@ -23,3 +23,5 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      # PodMonitor lands before kube-prometheus-stack CRDs exist on a fresh cluster.
+      - SkipDryRunOnMissingResource=true
