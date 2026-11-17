@@ -24,6 +24,7 @@ import json
 import os
 import uuid
 
+import functions_framework
 from google.cloud import secretmanager, storage
 from rideshare.db import connection
 from rideshare.fare import quote_between, quote_coordinates
@@ -78,6 +79,7 @@ def _imbalance(zone: str) -> float:
     return float(demand.get("imbalance", 1.0))
 
 
+@functions_framework.http
 def estimate(request):
     if request.method == "GET":
         return _response({"ok": True, "service": "fare"})
@@ -134,8 +136,13 @@ def estimate(request):
         return _response({"error": str(exc)}, 400)
 
 
+@functions_framework.cloud_event
 def finalize(cloud_event):
     data = cloud_event.data or {}
+    if isinstance(data, (bytes, bytearray)):
+        data = json.loads(data.decode("utf-8"))
+    elif isinstance(data, str):
+        data = json.loads(data)
     object_name = data.get("name", "")
     bucket_name = data.get("bucket", "")
 
