@@ -13,9 +13,10 @@
     <packaging>jar</packaging>
 
     <properties>
-        <maven.compiler.release>17</maven.compiler.release>
+        <maven.compiler.release>11</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <flink.version>1.20.0</flink.version>
+        <!-- Dataproc image 2.2 ships Flink 1.17.0 -->
+        <flink.version>1.17.0</flink.version>
     </properties>
 
     <dependencies>
@@ -30,7 +31,8 @@
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-base</artifactId>
-            <version>1.20.0</version>
+            <version>${flink.version}</version>
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
@@ -44,7 +46,7 @@
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-kafka</artifactId>
-            <version>3.4.0-1.20</version>
+            <version>3.0.2-1.17</version>
         </dependency>
 
         <dependency>
@@ -61,7 +63,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
-                    <release>17</release>
+                    <release>11</release>
                 </configuration>
             </plugin>
 
