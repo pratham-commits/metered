@@ -21,7 +21,7 @@ spec:
         runAsUser: 65532
       containers:
         - name: matching
-          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/matching:ca83bd0
+          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/matching:bdc5e5f
           ports:
             - name: http
               containerPort: 8004

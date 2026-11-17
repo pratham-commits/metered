@@ -21,7 +21,7 @@ spec:
         runAsUser: 65532
       containers:
         - name: demand-sink
-          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/demand-sink:3d26dd3
+          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/demand-sink:bdc5e5f
           ports:
             - name: http
               containerPort: 8010

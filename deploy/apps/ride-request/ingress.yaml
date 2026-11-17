@@ -1,6 +1,6 @@
-# rideshare-ip is 136.81.121.175. nip.io resolves that name to the same address,
+# rideshare-ip is 34.49.108.248. nip.io resolves that name to the same address,
 # which is what the Google managed certificate checks. HTTPS stays off until
-# the certificate is Active; http://136.81.121.175 works in the meantime.
+# the certificate is Active; http://34.49.108.248 works in the meantime.
 # Browser geolocation needs the HTTPS name.
 apiVersion: networking.gke.io/v1
 kind: ManagedCertificate
@@ -9,7 +9,7 @@ metadata:
   namespace: rideshare
 spec:
   domains:
-    - 136.81.121.175.nip.io
+    - 34.49.108.248.nip.io
 ---
 apiVersion: networking.gke.io/v1beta1
 kind: FrontendConfig

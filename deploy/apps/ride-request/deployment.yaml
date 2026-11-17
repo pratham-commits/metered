@@ -21,7 +21,7 @@ spec:
         runAsUser: 65532
       containers:
         - name: ride-request
-          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/ride-request:ca83bd0
+          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/ride-request:bdc5e5f
           ports:
             - name: http
               containerPort: 8003
