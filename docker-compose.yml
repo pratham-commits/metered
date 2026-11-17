@@ -173,6 +173,95 @@ services:
       - 127.0.0.1:8002:8002
       - 127.0.0.1:9002:9002
 
+  trip-tracking:
+    build:
+      context: .
+      dockerfile: services/trip-tracking/Dockerfile
+    environment:
+      <<: *gcp-env
+      SERVICE_NAME: trip-tracking
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      gcp-init:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8006:8006"
+
+  ride-request:
+    build:
+      context: .
+      dockerfile: services/ride-request/Dockerfile
+    environment:
+      <<: *gcp-env
+      SERVICE_NAME: ride-request
+      RIDER_URL: http://rider:8001
+      DRIVER_HTTP: http://driver:8002
+      TRIP_URL: http://trip-tracking:8006
+      DISPATCH_GRPC: dispatch:9005
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      gcp-init:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+      rider:
+        condition: service_started
+      driver:
+        condition: service_started
+      trip-tracking:
+        condition: service_started
+    ports:
+      - "127.0.0.1:8003:8003"
+
+  dispatch:
+    build:
+      context: .
+      dockerfile: services/dispatch/Dockerfile
+    environment:
+      <<: *gcp-env
+      SERVICE_NAME: dispatch
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      gcp-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:8005:8005"
+      - "127.0.0.1:9005:9005"
+
+  fare:
+    build:
+      context: .
+      dockerfile: services/fare/Dockerfile
+    environment:
+      <<: *gcp-env
+      SERVICE_NAME: fare
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      gcp-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:8007:8007"
+
+  demand-sink:
+    build:
+      context: .
+      dockerfile: services/demand-sink/Dockerfile
+    environment:
+      <<: *gcp-env
+      SERVICE_NAME: demand-sink
+    depends_on:
+      gcp-init:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8010:8010"
 # ---------------------------------------------------------------------------
 # LEGACY AWS BASELINE — retained for reference only. Disabled.
 # It used LocalStack for DynamoDB, SQS and S3. Set STORAGE_BACKEND=aws and
