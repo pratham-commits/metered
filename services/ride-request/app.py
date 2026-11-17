@@ -336,6 +336,7 @@ def api_open_rides(lat: float, lng: float):
 def api_accept(ride_id: UUID, body: AcceptIn):
     zone = zone_for(body.lat, body.lng)
     partition_id = live_ring().owner(zone)
+
     channel = grpc.insecure_channel(DISPATCH_GRPC)
     try:
         stub = dispatch_pb2_grpc.DispatchStub(channel)
@@ -349,8 +350,13 @@ def api_accept(ride_id: UUID, body: AcceptIn):
         )
     finally:
         channel.close()
+
     if not response.assigned:
-        raise HTTPException(status_code=409, detail=response.reason or "Could not accept")
+        raise HTTPException(
+            status_code=409,
+            detail=response.reason or "Could not accept",
+        )
+
     with connection() as conn:
         updated = conn.execute(
             """
@@ -360,21 +366,47 @@ def api_accept(ride_id: UUID, body: AcceptIn):
                 assigned_partition_id = %s,
                 updated_at = now()
             WHERE id = %s AND status = 'REQUESTED'
-            RETURNING id::text
+            RETURNING id::text, rider_id::text, pickup_zone
             """,
             (str(body.driver_id), partition_id, str(ride_id)),
         ).fetchone()
+
         if updated is None:
-            raise HTTPException(status_code=409, detail="Ride is no longer open")
+            raise HTTPException(
+                status_code=409,
+                detail="Ride is no longer open",
+            )
+
         record_hop(
             conn,
             str(ride_id),
             "ride-request",
             "GRPC",
             "NOSQL",
-            {"rpc": "Assign", "driver_id": str(body.driver_id), "accepted": True},
+            {
+                "rpc": "Assign",
+                "driver_id": str(body.driver_id),
+                "accepted": True,
+            },
         )
-        return {"ride": ride_row(conn, str(ride_id))}
+
+        ride = ride_row(conn, str(ride_id))
+
+    # Publish the successful assignment for Flink analytics.
+    get_store().publish(
+        {
+            "event_id": str(uuid.uuid4()),
+            "event_type": "RIDE_ASSIGNED",
+            "event_time": utc_now(),
+            "zone": updated[2],
+            "ride_id": updated[0],
+            "rider_id": updated[1],
+            "driver_id": str(body.driver_id),
+            "payload": {"partition_id": partition_id},
+        }
+    )
+
+    return {"ride": ride}
 
 
 @app.post("/api/ride-requests/{ride_id}/board")
