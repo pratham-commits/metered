@@ -129,6 +129,18 @@ resource "google_secret_manager_secret_iam_member" "runtime_database" {
   member    = "serviceAccount:${local.fare_sa}"
 }
 
+# Serverless VPC Access so Fare can reach private Cloud SQL (ipv4_enabled=false).
+# /28 must not overlap rideshare-subnet 10.20.0.0/20, pods, services, or PSA.
+resource "google_vpc_access_connector" "fare" {
+  name          = "rideshare-fare"
+  region        = var.region
+  network       = "rideshare-vpc"
+  ip_cidr_range = "10.29.0.0/28"
+  min_instances = 2
+  max_instances = 3
+  machine_type  = "e2-micro"
+}
+
 resource "google_cloudfunctions2_function" "estimate" {
   count = local.fare_source ? 1 : 0
 
@@ -150,12 +162,14 @@ resource "google_cloudfunctions2_function" "estimate" {
   }
 
   service_config {
-    max_instance_count    = 3
-    available_memory      = "256M"
-    timeout_seconds       = 60
-    service_account_email = local.fare_sa
-    ingress_settings      = "ALLOW_ALL"
-    environment_variables = local.fare_env
+    max_instance_count               = 3
+    available_memory                 = "256M"
+    timeout_seconds                  = 60
+    service_account_email            = local.fare_sa
+    ingress_settings                 = "ALLOW_ALL"
+    vpc_connector                    = google_vpc_access_connector.fare.id
+    vpc_connector_egress_settings    = "PRIVATE_RANGES_ONLY"
+    environment_variables            = local.fare_env
   }
 
   depends_on = [
@@ -165,6 +179,7 @@ resource "google_cloudfunctions2_function" "estimate" {
     google_service_account_iam_member.gcf_agent_act_as_build,
     google_service_account_iam_member.gcf_agent_act_as_runtime,
     google_secret_manager_secret_iam_member.runtime_database,
+    google_vpc_access_connector.fare,
   ]
 }
 
@@ -189,12 +204,14 @@ resource "google_cloudfunctions2_function" "final" {
   }
 
   service_config {
-    max_instance_count    = 3
-    available_memory      = "256M"
-    timeout_seconds       = 60
-    service_account_email = local.fare_sa
-    ingress_settings      = "ALLOW_INTERNAL_ONLY"
-    environment_variables = local.fare_env
+    max_instance_count               = 3
+    available_memory                 = "256M"
+    timeout_seconds                  = 60
+    service_account_email            = local.fare_sa
+    ingress_settings                 = "ALLOW_INTERNAL_ONLY"
+    vpc_connector                    = google_vpc_access_connector.fare.id
+    vpc_connector_egress_settings    = "PRIVATE_RANGES_ONLY"
+    environment_variables            = local.fare_env
   }
 
   event_trigger {
@@ -216,6 +233,7 @@ resource "google_cloudfunctions2_function" "final" {
     google_service_account_iam_member.gcf_agent_act_as_build,
     google_service_account_iam_member.gcf_agent_act_as_runtime,
     google_secret_manager_secret_iam_member.runtime_database,
+    google_vpc_access_connector.fare,
   ]
 }
 

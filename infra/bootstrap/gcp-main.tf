@@ -23,6 +23,7 @@ locals {
     "storage.googleapis.com",
     "sts.googleapis.com",
     "servicenetworking.googleapis.com",
+    "vpcaccess.googleapis.com",
   ]
 }
 

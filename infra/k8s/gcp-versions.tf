@@ -36,6 +36,12 @@ variable "fare_estimate_url" {
   default = ""
 }
 
+variable "grafana_url" {
+  type        = string
+  default     = ""
+  description = "Public Grafana URL for the Checklist evidence row (LoadBalancer http://IP). Empty lets Ride Request discover the prometheus-grafana Service."
+}
+
 data "terraform_remote_state" "platform" {
   backend = "gcs"
   config = {

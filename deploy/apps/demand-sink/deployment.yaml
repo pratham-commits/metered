@@ -1,6 +1,85 @@
-# Person 3. Deployment, Service, and ServiceAccount named demand-sink.
-# Port http 8010. 1 replica.
-# ServiceAccount annotation:
-#   iam.gke.io/gcp-service-account: rideshare-demand-sink@metered-513804.iam.gserviceaccount.com
-# envFrom the config map and the secret. The HTTP port name must be http.
-# Kafka TLS: mount rideshare-kafka-cluster-ca-cert at /etc/kafka.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demand-sink
+  namespace: rideshare
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demand-sink
+  template:
+    metadata:
+      labels:
+        app: demand-sink
+      annotations:
+        rideshare.io/config-version: "1"
+    spec:
+      serviceAccountName: demand-sink
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      containers:
+        - name: demand-sink
+          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/demand-sink:3d26dd3
+          ports:
+            - name: http
+              containerPort: 8010
+          envFrom:
+            - secretRef:
+                name: rideshare-secret
+            - configMapRef:
+                name: rideshare-config
+          env:
+            - name: SERVICE_NAME
+              value: demand-sink
+          volumeMounts:
+            - name: kafka-ca
+              mountPath: /etc/kafka
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8010
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8010
+            initialDelaySeconds: 15
+      volumes:
+        - name: kafka-ca
+          secret:
+            secretName: rideshare-kafka-cluster-ca-cert
+            items:
+              - key: ca.crt
+                path: ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demand-sink
+  namespace: rideshare
+spec:
+  selector:
+    app: demand-sink
+  ports:
+    - name: http
+      port: 8010
+      targetPort: 8010
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: demand-sink
+  namespace: rideshare
+  annotations:
+    iam.gke.io/gcp-service-account: rideshare-demand-sink@metered-513804.iam.gserviceaccount.com

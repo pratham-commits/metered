@@ -21,7 +21,7 @@ from rideshare.hops import record_hop
 from rideshare.logging_setup import configure
 from rideshare.store import get_store
 from rideshare.web import install
-from rideshare.zones import cells_around, resolution, zone_for
+from rideshare.zones import cells_around, distance_km, resolution, zone_for
 
 
 def _load_dotenv() -> None:
@@ -54,6 +54,7 @@ DISPATCH_GRPC = os.environ.get(
     "DISPATCH_GRPC", "dispatch.rideshare.svc.cluster.local:9005"
 )
 FARE_ESTIMATE_URL = os.environ.get("FARE_ESTIMATE_URL", "").strip()
+GRAFANA_URL = os.environ.get("GRAFANA_URL", "").strip()
 DEMO_TOKEN = os.environ.get("DEMO_TOKEN", "")
 MAPBOX_ACCESS_TOKEN = os.environ.get("MAPBOX_ACCESS_TOKEN", "").strip()
 DEFAULT_PARTITIONS = "p0,p1,p2,p3"
@@ -411,44 +412,93 @@ def api_accept(ride_id: UUID, body: AcceptIn):
 
 @app.post("/api/ride-requests/{ride_id}/board")
 def api_board(ride_id: UUID):
+    """Start the trip via Trip Tracking so GPS + TRIP_UPDATED are recorded."""
+    ride_id_text = str(ride_id)
     with connection() as conn:
-        row = conn.execute(
-            """
-            UPDATE ride_requests
-            SET status = 'IN_PROGRESS', updated_at = now()
-            WHERE id = %s AND status IN ('ACCEPTED', 'ASSIGNED')
-            RETURNING id::text
-            """,
-            (str(ride_id),),
-        ).fetchone()
-        if row is None:
+        ride = ride_row(conn, ride_id_text)
+        if ride is None:
+            raise HTTPException(status_code=404, detail="Ride not found")
+        if ride["status"] not in ("ACCEPTED", "ASSIGNED"):
             raise HTTPException(status_code=409, detail="Driver has not accepted yet")
-        record_hop(conn, str(ride_id), "ride-request", "REST", "SQL", {"action": "board"})
-        return {"ride": ride_row(conn, str(ride_id))}
+        if not ride["assigned_driver_id"]:
+            raise HTTPException(status_code=409, detail="Ride has no assigned driver")
+        lat = float(ride["pickup_lat"])
+        lng = float(ride["pickup_lng"])
+        record_hop(
+            conn,
+            ride_id_text,
+            "ride-request",
+            "REST",
+            "SQL",
+            {"action": "board", "via": "trip-tracking"},
+        )
+
+    http_json(
+        "POST",
+        f"{TRIP_URL}/trips/{ride_id_text}/progress",
+        {"status": "IN_PROGRESS", "lat": lat, "lng": lng},
+    )
+    with connection() as conn:
+        return {"ride": ride_row(conn, ride_id_text)}
 
 
 @app.post("/api/ride-requests/{ride_id}/finish")
 def api_finish(ride_id: UUID):
+    """Complete via Trip Tracking so completions/*.json triggers Fare finalize."""
+    ride_id_text = str(ride_id)
     with connection() as conn:
-        row = conn.execute(
-            """
-            UPDATE ride_requests
-            SET status = 'COMPLETED', updated_at = now()
-            WHERE id = %s AND status = 'IN_PROGRESS'
-            RETURNING assigned_driver_id::text, assigned_partition_id
-            """,
-            (str(ride_id),),
-        ).fetchone()
-        if row is None:
+        ride = ride_row(conn, ride_id_text)
+        if ride is None:
+            raise HTTPException(status_code=404, detail="Ride not found")
+        if ride["status"] != "IN_PROGRESS":
             raise HTTPException(status_code=409, detail="The ride has not started")
-        record_hop(conn, str(ride_id), "ride-request", "REST", "SQL", {"action": "finish"})
-        ride = ride_row(conn, str(ride_id))
-    if row[0] and row[1]:
-        try:
-            get_store().release(row[1], row[0])
-        except Exception:
-            log.exception("release driver failed")
-    return {"ride": ride}
+        if not ride["assigned_driver_id"]:
+            raise HTTPException(status_code=409, detail="Ride has no assigned driver")
+
+        pickup_lat = float(ride["pickup_lat"])
+        pickup_lng = float(ride["pickup_lng"])
+        drop_lat = float(ride["drop_lat"])
+        drop_lng = float(ride["drop_lng"])
+        kilometres = round(distance_km(pickup_lat, pickup_lng, drop_lat, drop_lng), 3)
+
+        started = conn.execute(
+            "SELECT started_at FROM trips WHERE ride_id = %s",
+            (ride_id_text,),
+        ).fetchone()
+        if started and started[0] is not None:
+            elapsed = int((datetime.now(timezone.utc) - started[0].astimezone(timezone.utc)).total_seconds())
+            duration_sec = max(60, elapsed)
+        else:
+            # Same 25 km/h assumption as rideshare.fare.quote_cents.
+            duration_sec = max(60, int(kilometres / 25.0 * 3600))
+
+        record_hop(
+            conn,
+            ride_id_text,
+            "ride-request",
+            "REST",
+            "SQL",
+            {
+                "action": "finish",
+                "via": "trip-tracking",
+                "distance_km": kilometres,
+                "duration_sec": duration_sec,
+            },
+        )
+
+    http_json(
+        "POST",
+        f"{TRIP_URL}/trips/{ride_id_text}/progress",
+        {
+            "status": "COMPLETED",
+            "lat": drop_lat,
+            "lng": drop_lng,
+            "distance_km": kilometres,
+            "duration_sec": duration_sec,
+        },
+    )
+    with connection() as conn:
+        return {"ride": ride_row(conn, ride_id_text)}
 
 
 @app.post("/api/trips/{ride_id}/progress")
@@ -727,6 +777,39 @@ def replicas_above_minimum(counts: dict[str, int]) -> bool:
     return counts.get("ride-request", 0) > 2 and counts.get("matching", 0) > 2
 
 
+def _k8s_get_json(url: str):
+    token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    if not os.path.isfile(token_path):
+        return None
+    token = Path(token_path).read_text(encoding="utf-8").strip()
+    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    context = ssl.create_default_context(
+        cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5, context=context) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        return None
+
+
+def read_grafana_url() -> str:
+    """Prefer GRAFANA_URL; otherwise discover the prometheus-grafana LoadBalancer."""
+    if GRAFANA_URL:
+        return GRAFANA_URL.rstrip("/")
+    body = _k8s_get_json(
+        "https://kubernetes.default.svc/api/v1/namespaces/monitoring/services/prometheus-grafana"
+    )
+    if not isinstance(body, dict):
+        return "http://prometheus-grafana.monitoring.svc.cluster.local"
+    ingress = (body.get("status") or {}).get("loadBalancer", {}).get("ingress") or []
+    if ingress:
+        host = ingress[0].get("ip") or ingress[0].get("hostname")
+        if host:
+            return f"http://{host}"
+    return "http://prometheus-grafana.monitoring.svc.cluster.local"
+
+
 def read_hpa_replicas() -> dict[str, int] | str:
     token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
     if not os.path.isfile(token_path):
@@ -735,20 +818,12 @@ def read_hpa_replicas() -> dict[str, int] | str:
     namespace = "rideshare"
     if os.path.isfile(namespace_path):
         namespace = Path(namespace_path).read_text(encoding="utf-8").strip() or namespace
-    token = Path(token_path).read_text(encoding="utf-8").strip()
-    url = (
+    body = _k8s_get_json(
         "https://kubernetes.default.svc/apis/autoscaling/v2/namespaces/"
         f"{namespace}/horizontalpodautoscalers"
     )
-    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
-    context = ssl.create_default_context(
-        cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=5, context=context) as response:
-            body = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        return str(getattr(exc, "reason", exc))
+    if not isinstance(body, dict):
+        return "could not read HPAs"
     counts: dict[str, int] = {}
     for item in body.get("items", []):
         name = item.get("metadata", {}).get("name", "")
@@ -819,6 +894,8 @@ def api_checklist(lat: float | None = None, lng: float | None = None):
         "driver": f"{DRIVER_HTTP}/healthz",
         "matching": "http://matching.rideshare.svc.cluster.local:8004/healthz",
         "dispatch": "http://dispatch.rideshare.svc.cluster.local:8005/healthz",
+        "trip-tracking": f"{TRIP_URL}/healthz",
+        "demand-sink": "http://demand-sink.rideshare.svc.cluster.local:8010/healthz",
     }
     health = {}
     for name, url in targets.items():
@@ -866,7 +943,12 @@ def api_checklist(lat: float | None = None, lng: float | None = None):
         },
         {"id": "terraform", "title": "Terraform platform", "status": "show", "evidence": "terraform -chdir=infra/platform state list"},
         {"id": "argocd", "title": "Argo CD GitOps", "status": "show", "evidence": "kubectl -n argocd get applications"},
-        {"id": "grafana", "title": "Grafana dashboards", "status": "show", "evidence": "http://127.0.0.1:3000 dashboard Ride Sharing"},
+        {
+            "id": "grafana",
+            "title": "Grafana dashboards",
+            "status": "show",
+            "evidence": f"{read_grafana_url()} dashboard Ride Sharing",
+        },
         {
             "id": "logging",
             "title": "Cloud Logging",

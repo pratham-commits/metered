@@ -1,6 +1,84 @@
-# Person 3. Deployment, Service, and ServiceAccount named trip-tracking.
-# Port http 8006. 2 replicas. No Ingress.
-# ServiceAccount annotation:
-#   iam.gke.io/gcp-service-account: rideshare-trip-tracking@metered-513804.iam.gserviceaccount.com
-# Mount rideshare-kafka-cluster-ca-cert at /etc/kafka for Kafka TLS.
-# The HTTP port name must be http so the PodMonitor can scrape /metrics.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trip-tracking
+  namespace: rideshare
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: trip-tracking
+  template:
+    metadata:
+      labels:
+        app: trip-tracking
+      annotations:
+        rideshare.io/config-version: "1"
+    spec:
+      serviceAccountName: trip-tracking
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      containers:
+        - name: trip-tracking
+          image: asia-south1-docker.pkg.dev/metered-513804/rideshare/trip-tracking:3d26dd3
+          ports:
+            - name: http
+              containerPort: 8006
+          envFrom:
+            - secretRef:
+                name: rideshare-secret
+            - configMapRef:
+                name: rideshare-config
+          env:
+            - name: SERVICE_NAME
+              value: trip-tracking
+          volumeMounts:
+            - name: kafka-ca
+              mountPath: /etc/kafka
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8006
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8006
+            initialDelaySeconds: 10
+      volumes:
+        - name: kafka-ca
+          secret:
+            secretName: rideshare-kafka-cluster-ca-cert
+            items:
+              - key: ca.crt
+                path: ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trip-tracking
+  namespace: rideshare
+spec:
+  selector:
+    app: trip-tracking
+  ports:
+    - name: http
+      port: 8006
+      targetPort: 8006
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trip-tracking
+  namespace: rideshare
+  annotations:
+    iam.gke.io/gcp-service-account: rideshare-trip-tracking@metered-513804.iam.gserviceaccount.com

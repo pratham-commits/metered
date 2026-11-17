@@ -41,3 +41,28 @@ roleRef:
   kind: Role
   name: ride-request-hpa-reader
   apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ride-request-grafana-reader
+  namespace: monitoring
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["prometheus-grafana"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ride-request-grafana-reader
+  namespace: monitoring
+subjects:
+  - kind: ServiceAccount
+    name: ride-request
+    namespace: rideshare
+roleRef:
+  kind: Role
+  name: ride-request-grafana-reader
+  apiGroup: rbac.authorization.k8s.io

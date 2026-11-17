@@ -73,7 +73,8 @@ resource "kubernetes_config_map" "rideshare" {
     DRIVER_GRPC              = "driver.rideshare.svc.cluster.local:9002"
     DISPATCH_GRPC            = "dispatch.rideshare.svc.cluster.local:9005"
     TRIP_URL                 = "http://trip-tracking.rideshare.svc.cluster.local:8006"
-    PROMETHEUS_URL           = "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
+    PROMETHEUS_URL           = "http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090"
+    GRAFANA_URL              = var.grafana_url
   }
 }
 
