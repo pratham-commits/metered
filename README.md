@@ -27,8 +27,8 @@ Start with:
 | Person 2 | `services/ride-request/`, `services/matching/`, `services/dispatch/`, `services/common/rideshare/hashring.py`, `services/common/tests/`, `proto/`, `deploy/apps/ride-request/`, `deploy/apps/matching/`, `deploy/apps/dispatch/`, `deploy/platform/`, `loadtest/` | GKE scale, HPA, consistent hashing, Prometheus, Grafana, Cloud Logging, the public UI |
 | Person 3 | `services/trip-tracking/`, `services/fare/`, `services/demand-analytics/`, `services/demand-sink/`, `deploy/apps/trip-tracking/`, `deploy/apps/demand-sink/`, `infra/functions/`, `infra/dataproc/` | Cloud Run functions, REST/gRPC/Pub/Sub on the trace, Flink on Dataproc |
 
-`docs/design.md` and `task_division.txt` are filled in before submission. The
-platform maintainer merges the design document.
+`docs/design.md` is the full design document (six required parts + appendices,
+with Mermaid and PNG diagrams). `task_division.txt` lists ownership IDs.
 
 ## Layout
 
