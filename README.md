@@ -11,6 +11,7 @@ Eight microservices, one public BFF (Ride Request), GitOps with Argo CD, H3 cons
 | [`design.md`](design.md) | Full design document (six required parts; **self-contained**, inline Mermaid only) |
 | [`presentation.pdf`](presentation.pdf) | Architecture presentation (19 slides) |
 | [`task_division.txt`](task_division.txt) | Team IDs, services, letters a–h |
+| [`live_links.md`](live_links.md) | Public demo URLs only (no GCP Console) |
 | [`metered-runbook.md`](metered-runbook.md) | Operator runbook (deploy / smoke / teardown) |
 | [`gcp-migration.md`](gcp-migration.md) | AWS → GCP migration notes |
 
